@@ -11,6 +11,12 @@ Handoff document: what is done, what was decided, what comes next.
       setpoints protective, modes and setpoints behind `allow_commands`,
       hot water ceiling, docs en/fr, cover. Tested against a fake controller
       only.
+- [x] **Review r4** (2026-10-27): APPROUVÉ, no blocker (4th round, rule of 5).
+- [ ] **Next patch — review r4 leftovers**: say in the docs that after a
+      restart, a stop with no `from` in /data overwrites a choice made
+      elsewhere before the first read of 0; the status time is ambiguous during
+      the repeated hour of the autumn clock change; mutant Q5 (a read back of 0
+      no longer marks the stop applied) survives, on the side of doubt.
 - [ ] **Milestone 2 — real controller**: run against a real one (see "To
       check"), turn register dumps into fixtures.
 - [ ] **Milestone 3 — more**: solar modules (index 4), the buffer maximum and
