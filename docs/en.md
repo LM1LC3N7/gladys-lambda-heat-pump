@@ -79,19 +79,29 @@ otherwise, is answered "not confirmed" and still written every 20 s. It waits
 only when no address is known at all (no configuration and nothing in
 `/data`): then it is written as soon as the address is.
 
-Holding the stop overrides any other actor that asks for a mode through
-Modbus in between, which is why Gladys reads the mode before each new write.
-The hold ends, and the controller goes back to its own setting once the last
-request lapses, when:
+Holding the stop would override any other actor that asks for a mode
+through Modbus, so Gladys reads the mode before each new write. The stop
+never ends by time; the status says since when it is held. It ends, and the
+controller goes back to its own setting once the last request lapses (the
+heating may then start again), only when:
 
-- a read shows another mode than the stop (chosen at the panel or by another
-  Modbus client): Gladys never writes over it (a request that only lapsed,
-  -1, is written again);
-- 24 hours have passed since the click;
+- two reads in a row (2 s apart) show another documented mode request (2 to
+  6: automatic, automatic heating or cooling, frost protection, summer) that
+  is neither the stop nor the request read before the stop. This is how to
+  end it from the panel or another Modbus client. Gladys writes nothing
+  between the two reads. Anything else is written over: a request that only
+  lapsed (-1), the request read before the stop (the stop not applied yet:
+  after three such reads the status says the controller does not apply it),
+  an unknown code, "manual" or "screed" (1, 7), a sentinel, a failed read;
 - the heating circuit is removed from the configuration (fewer heating
   circuits), its device is deleted, or the address is cleared or changed;
 - another mode or **No request** is chosen in Gladys: both start the heating
   again, so both need "Allow the commands".
+
+After a restart of the integration the stop kept in `/data` is written once
+without a read first: a mode chosen at the panel while the integration was
+stopped is overwritten that once, then respected as above (two reads in a
+row) from the next refresh, 20 s later.
 
 A command sent before the stop and still waiting is dropped.
 
@@ -106,8 +116,9 @@ a setpoint changed since (at the panel or by a newer command) is left alone.
 
 - **Mode** of a heating circuit: automatic, automatic heating, automatic
   cooling, frost protection, summer, or "No request". The mode chosen is held
-  and written again every 20 s while the option is on; turning the option off
-  stops it, and so does a restart (only a stop is kept). "Manual" and "Screed
+  and written again every 20 s while the option is on, for 24 hours at most
+  (then the controller takes over again); turning the option off stops it,
+  and so does a restart (only a stop is kept). "Manual" and "Screed
   program" are shown by the controller but never set.
 - **Room setpoint** (heating): 15 to 40 °C, tenths of a degree.
 - **Hot water setpoint**: whole degrees, 25 °C up to the ceiling of the

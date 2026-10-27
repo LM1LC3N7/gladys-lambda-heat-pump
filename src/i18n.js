@@ -266,7 +266,9 @@ const RELEASE_REASONS = {
   'device deleted': { fr: 'appareil supprimé' },
   'released from Gladys': { fr: 'libéré depuis Gladys' },
   'commands disabled': { fr: 'commandes désactivées' },
-  'held for 24 h': { fr: 'maintenu depuis 24 h' },
+  'held for 24 h, the controller takes over': {
+    fr: 'maintenu depuis 24 h, le régulateur reprend la main',
+  },
   'mode changed elsewhere': { fr: 'mode changé ailleurs' },
 };
 
@@ -294,10 +296,15 @@ export const T = {
     ),
   notes: {
     failing: (list) => w(`Not read: ${list}.`, `Non lus : ${list}.`),
-    held: (list) =>
+    heldSince: (n, since) =>
       w(
-        `Heating circuit held off by Gladys: ${list}.`,
-        `Circuit de chauffage maintenu à l'arrêt par Gladys : ${list}.`,
+        `Heating circuit ${n} held off by Gladys since ${since} (to end it: another mode or "No request" with the commands allowed, or another mode at the panel).`,
+        `Circuit de chauffage ${n} maintenu à l'arrêt par Gladys depuis ${since} (pour en sortir : un autre mode ou « Aucune demande » avec les commandes autorisées, ou un autre mode au panneau).`,
+      ),
+    stopNotApplied: (n) =>
+      w(
+        `The controller does not apply the stop of heating circuit ${n}: written again every 20 s.`,
+        `Le régulateur n'applique pas l'arrêt du circuit de chauffage ${n} : réécrit toutes les 20 s.`,
       ),
     released: (n, reason) =>
       w(

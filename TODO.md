@@ -29,8 +29,32 @@ Handoff document: what is done, what was decided, what comes next.
 - Whether 5x07, 1x19, 0100–0104 and 3x50 are served on the firmware in the
   field (absent blocks are skipped after an "illegal data address").
 - How many Modbus clients the controller accepts at once.
+- Whether a mode chosen at the panel shows in 5x06 (the hold relies on it to
+  let go); until confirmed, another Modbus client is the proven way.
 
 ## Decisions
+
+- **Review r2 (2026-10-27)**:
+  - B1: the stop keeps the request read before it (`from`, in /data). It is
+    let go only when two reads in a row, 2 s apart (`holdConfirm`), show a
+    documented request 2 to 6 other than 0 and `from`; nothing is written
+    between them. An unknown code, -3000, -1, 1 or 7 (read only: kept as not
+    a proof, decided by the lot rules), a failed read, or `from` itself (the
+    stop not applied: noted in the status after 3 reads) are written over.
+  - B2: a floor whose replaced value is unknown is written again in doubt (3
+    times, 15 min), dropped only on a value other than a known `from`.
+  - Lot rule after the CTC r2: a stop never ends by time. The 24 h limit stays
+    for the other modes held, on the monotonic clock. The status says since
+    when a stop is held and how to end it.
+  - I1: every refusal of a commandable feature, before the queue included,
+    publishes the value read again.
+  - The start-up write of a stop kept in /data stays without a read (fiche);
+    the docs say a panel change made meanwhile is overwritten once, then
+    respected from the next refresh. `resumed` is cleared only once that
+    write was acknowledged.
+  - Minors: `released` cleared by a new hold of the circuit; notices fence
+    closed with four backticks; tests for the failed read, the joined dial,
+    another address and the offline notes.
 
 - **Review r1 (2026-10-27)**:
   - B1: the client is created from the controller kept in /data at boot,

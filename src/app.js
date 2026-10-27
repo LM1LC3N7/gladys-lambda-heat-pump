@@ -76,9 +76,17 @@ import { FileStore, emptyData } from './store.js';
 const REFUSALS = new Set([1, 2, 3, 6, 10]);
 
 const specOf = (kind, role) => REGISTERS[kind].find((s) => s.role === role);
+const signedCode = (word) =>
+  word === undefined ? undefined : word >= 0x8000 ? word - 0x10000 : word;
+/** Mode requests another actor may write (the manual's RW codes but the stop): 2 to 6. */
+const OTHER_MODES = new Set([2, 3, 4, 5, 6]);
 
 /** A refusal: an Error whose message is the text in the configured language. */
 class Refusal extends Error {}
+
+/** A wall-clock date for the status: "2026-10-27 14:05 UTC". */
+const stamp = (ms) =>
+  Number.isFinite(ms) ? `${new Date(ms).toISOString().slice(0, 16).replace('T', ' ')} UTC` : '?';
 
 export class LambdaApp {
   constructor({
@@ -178,6 +186,8 @@ export class LambdaApp {
           code: MODE_CODES.off,
           protective: true,
           since: hold.at,
+          sinceMono: this.monotonic(),
+          from: hold.from,
           resumed: true,
         });
       }
@@ -237,6 +247,14 @@ export class LambdaApp {
     }
     this.floors.clear();
     this.saveData();
+  }
+
+  /** A new request held for a circuit: what was said of its last release no longer applies. */
+  setHold(index, hold) {
+    this.holds.set(index, hold);
+    if (this.released?.index === index) {
+      this.released = undefined;
+    }
   }
 
   /** A held request is no longer written; the controller follows its own setting once it lapses. */
@@ -441,7 +459,11 @@ export class LambdaApp {
     const holds = {};
     for (const [index, hold] of this.holds) {
       if (hold.key === 'off') {
-        holds[index] = { mode: 'off', at: hold.since ?? this.data.holds[index]?.at ?? this.now() };
+        holds[index] = {
+          ...(Number.isInteger(hold.from) ? { from: hold.from } : {}),
+          mode: 'off',
+          at: hold.since ?? this.data.holds[index]?.at ?? this.now(),
+        };
       }
     }
     const floors = {};
@@ -767,9 +789,14 @@ export class LambdaApp {
   /** What the status says whatever the connection: stops held, a release, /data. */
   holdNotes() {
     const notes = [];
-    const held = [...this.holds].filter(([, h]) => h.key === 'off').map(([i]) => i + 1);
-    if (held.length > 0) {
-      notes.push(T.notes.held(held.join(', ')));
+    for (const [index, hold] of this.holds) {
+      if (hold.key !== 'off') {
+        continue;
+      }
+      notes.push(T.notes.heldSince(index + 1, stamp(hold.since)));
+      if ((hold.notApplied ?? 0) >= 3) {
+        notes.push(T.notes.stopNotApplied(index + 1));
+      }
     }
     if (this.released) {
       notes.push(T.notes.released(this.released.index + 1, this.released.reason));
@@ -932,7 +959,21 @@ export class LambdaApp {
     };
   }
 
-  async setValue(_device, feature, value) {
+  async setValue(device, feature, value) {
+    try {
+      return await this.runCommand(device, feature, value);
+    } catch (err) {
+      // Any refusal, even before the queue (option off, ceiling, bad value):
+      // the dashboard shows what was clicked, the value read is published again.
+      const id = parseId(feature?.external_id);
+      if (id?.role && COMMANDS[id.kind]?.includes(id.role)) {
+        this.republish(id);
+      }
+      throw err;
+    }
+  }
+
+  async runCommand(_device, feature, value) {
     // The deadlines count from the arrival of the command, before any wait.
     const received = this.monotonic();
     const command = this.parseCommand(feature, value);
@@ -1037,7 +1078,16 @@ export class LambdaApp {
     const before = this.knownWord(command);
     const at = this.now();
     if (kind === 'hc' && command.role === 'mode') {
-      this.holds.set(index, { key: 'off', code: MODE_CODES.off, protective: true, since: at });
+      const from = signedCode(before);
+      this.setHold(index, {
+        key: 'off',
+        code: MODE_CODES.off,
+        protective: true,
+        since: at,
+        sinceMono: this.monotonic(),
+        // The request before the stop: seen again, it is the stop not applied, never a release.
+        from: from === MODE_CODES.off ? undefined : from,
+      });
       this.data.holds[index] = { mode: 'off', at };
     } else {
       this.floors.set(target, {
@@ -1068,6 +1118,11 @@ export class LambdaApp {
     this.updateStatus().catch(() => {});
     try {
       const outcome = await this.sendProtective(client, command, received, before);
+      const hold = command.role === 'mode' ? this.holds.get(index) : undefined;
+      if (hold?.protective && outcome.got !== undefined && outcome.got !== command.word) {
+        hold.from = signedCode(outcome.got);
+        this.saveData();
+      }
       const floor = this.floors.get(target);
       if (floor && outcome.got !== undefined && outcome.got !== command.word) {
         // Read back unchanged: that is the value a later read must still show to write again.
@@ -1255,8 +1310,10 @@ export class LambdaApp {
           code: MODE_CODES[command.key],
           protective: false,
           since: this.now(),
+          sinceMono: this.monotonic(),
+          from: signedCode(fresh),
         };
-        this.holds.set(command.index, installed);
+        this.setHold(command.index, installed);
         delete this.data.holds[command.index];
       } else {
         this.floors.delete(command.target);
@@ -1319,7 +1376,7 @@ export class LambdaApp {
       return;
     }
     if (previousHold) {
-      this.holds.set(command.index, previousHold);
+      this.setHold(command.index, previousHold);
       if (previousHold.key === 'off') {
         this.data.holds[command.index] = { mode: 'off', at: previousHold.since ?? this.now() };
       }
@@ -1374,49 +1431,67 @@ export class LambdaApp {
     if (!client) {
       return;
     }
-    const wall = this.now();
+    const mono = this.monotonic();
     const jobs = [];
     for (const [index, hold] of this.holds) {
       if (!hold.protective && !this.config.allowCommands) {
         this.releaseHold(index, 'commands disabled');
         continue;
       }
-      const since = Number.isFinite(hold.since) && hold.since <= wall ? hold.since : wall;
-      if (wall - since >= TIMINGS.holdMax) {
-        this.releaseHold(index, 'held for 24 h');
+      // A stop never ends by time; another mode held is let go after 24 h (monotonic).
+      if (!hold.protective && mono - (hold.sinceMono ?? mono) >= TIMINGS.holdMax) {
+        this.releaseHold(index, 'held for 24 h, the controller takes over');
         continue;
       }
       jobs.push(this.refreshHold(client, index, hold));
     }
     await Promise.all(jobs);
+    await this.updateStatus().catch(() => {});
   }
 
+  /**
+   * One held request: read, then written again. Let go only on proof that
+   * another actor asked for another mode: a documented request (2 to 6) that
+   * is neither ours nor the one before ours, read twice in a row. An unknown
+   * code, a sentinel, -1, a failed read or the request before ours (ours not
+   * applied) never lets go: the request is written again.
+   */
   async refreshHold(client, index, hold) {
     const register = registerOf('hc', index, specOf('hc', 'mode').at);
     const priority = hold.protective ? PRIORITY.URGENT : PRIORITY.COMMAND;
     const word = hold.code < 0 ? hold.code + 0x10000 : hold.code;
     if (!hold.resumed) {
-      try {
-        const [shown] = await client.readHolding(register, 1, {
-          priority,
-          timeoutMs: TIMINGS.requestTimeout,
-        });
-        const value = decodeWord(specOf('hc', 'mode'), shown);
-        if (
-          this.holds.get(index) === hold &&
-          value !== undefined &&
-          value.code !== hold.code &&
-          value.code !== -1
-        ) {
-          // Another actor asked for another mode: never written over.
+      for (let read = 0; read < 2; read += 1) {
+        let code;
+        try {
+          const [shown] = await client.readHolding(register, 1, {
+            priority,
+            timeoutMs: TIMINGS.requestTimeout,
+          });
+          code = signedCode(shown);
+        } catch {
+          // Unread: written all the same (a stop must go).
+        }
+        if (this.holds.get(index) !== hold) {
+          return;
+        }
+        const other = OTHER_MODES.has(code) && code !== hold.code && code !== hold.from;
+        hold.notApplied = code !== undefined && code === hold.from ? (hold.notApplied ?? 0) + 1 : 0;
+        if (!other) {
+          break;
+        }
+        if (read === 1) {
+          // Asked elsewhere, seen on two reads in a row: never written over.
           this.releaseHold(index, 'mode changed elsewhere');
           return;
         }
-      } catch {
-        // Unread: the request is written all the same (a stop must go).
+        // Seen once: read again shortly before deciding, nothing written meanwhile.
+        await new Promise((resolve) => this.timers.setTimeout(resolve, TIMINGS.holdConfirm));
+        if (this.holds.get(index) !== hold || client !== this.client) {
+          return;
+        }
       }
     }
-    hold.resumed = false;
     try {
       await client.writeRegisters(register, [word], {
         priority,
@@ -1430,6 +1505,8 @@ export class LambdaApp {
           }
         },
       });
+      // The start-up write without a read is done once it was acknowledged.
+      hold.resumed = false;
       hold.failing = false;
     } catch (err) {
       if (!err.beforeSend && !hold.failing) {
@@ -1464,7 +1541,8 @@ export class LambdaApp {
         changed = true;
         continue;
       }
-      if (value !== undefined && (floor.from === undefined || tenthsWord(value) !== floor.from)) {
+      // An unknown `from` is a doubt: written again (3 times at most), never dropped.
+      if (value !== undefined && floor.from !== undefined && tenthsWord(value) !== floor.from) {
         // Changed since by someone else (the panel, a newer command): left alone.
         this.floors.delete(target);
         changed = true;

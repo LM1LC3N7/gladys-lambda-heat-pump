@@ -16,7 +16,7 @@ contributors, version V2.8.6 (tag `V2.8.6`, commit d00dde4, 2026-09-05). MIT
 License (`LICENSE` of the repository). Its notice, as published (the
 copyright line of its template was never filled in):
 
-````
+```
 MIT License
 
 Copyright (c) 2024 Your Name
@@ -46,4 +46,3 @@ SOFTWARE.
 formats, units and code meanings of `src/lambda.js` and `src/i18n.js` come
 from this manual. No text of it is reproduced; the names of the codes are our
 own translations.
-````

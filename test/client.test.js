@@ -221,3 +221,29 @@ test('an answer with another transaction id drops the connection', async (t) => 
   await assert.rejects(c.readHolding(1, 1), { kind: ERROR_KINDS.PROTOCOL });
   await waitFor(() => server.open === 0, 'the connection dropped');
 });
+
+test('a connection still being opened is joined: never two at once', async (t) => {
+  const lambda = await fakeLambda();
+  t.after(() => lambda.close());
+  const clock = testClock();
+  let dials = 0;
+  const net = await import('node:net');
+  const c = new ModbusClient({
+    host: '127.0.0.1',
+    port: lambda.port,
+    unitId: 1,
+    timers: clock.timers,
+    monotonic: clock.monotonic,
+    connect: (options) => {
+      dials += 1;
+      return net.createConnection(options);
+    },
+  });
+  t.after(() => c.close());
+  const late = c.readHolding(0, 2, { startBy: clock.monotonic() }).catch((err) => err);
+  const next = c.readHolding(0, 2);
+  await late;
+  assert.deepEqual(await next, [0, 1]);
+  assert.equal(dials, 1);
+  assert.equal(lambda.peak, 1);
+});

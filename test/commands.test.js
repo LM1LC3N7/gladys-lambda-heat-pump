@@ -43,8 +43,12 @@ test('the stop of a circuit: option off, written at once (no read before), read 
     [3, 5006],
   ]);
   assert.equal(lambda.regs.get(5006), 0);
-  assert.deepEqual(store.data.holds, { 0: { mode: 'off', at: store.data.holds[0].at } });
-  assert.match(gladys.fake.connectionStatus.message.en, /held off by Gladys: 1/);
+  assert.equal(store.data.holds[0].mode, 'off');
+  assert.equal(store.data.holds[0].from, -1, 'the request before the stop: none');
+  assert.match(
+    gladys.fake.connectionStatus.message.en,
+    /Heating circuit 1 held off by Gladys since 20\d\d-\d\d-\d\d \d\d:\d\d UTC/,
+  );
   assert.equal(app.config.allowCommands, false);
 });
 

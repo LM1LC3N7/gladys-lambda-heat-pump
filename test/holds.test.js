@@ -76,7 +76,10 @@ test('B1: the controller kept in /data, getConfig() failing: a stop leaves at on
   lambda.regs.set(5006, 0xffff);
   await advance(clock, 20_000);
   await waitFor(() => lambda.regs.get(5006) === 0, 'written again');
-  assert.match(gladys.fake.connectionStatus.message.en, /held off by Gladys: 1/);
+  assert.match(
+    gladys.fake.connectionStatus.message.en,
+    /Heating circuit 1 held off by Gladys since 20\d\d-\d\d-\d\d \d\d:\d\d UTC/,
+  );
 });
 
 test('I1: a mode asked elsewhere after the stop ends the hold; -1 (lapsed) does not', async (t) => {
@@ -102,17 +105,24 @@ test('I1: a mode asked elsewhere after the stop ends the hold; -1 (lapsed) does 
   );
 });
 
-test('I1: the hold ends after 24 h', async (t) => {
+test('r2: a stop never ends by time; another mode held ends after 24 h (monotonic)', async (t) => {
   const clock = testClock();
-  const { gladys, lambda, app } = await setup(t, { clock });
+  const { gladys, lambda, app } = await setup(t, { clock, config: ALLOW });
   const hc = await createDevice(gladys, 'hc-1');
   await command(gladys, hc, 'mode', 'off');
-  app.holds.get(0).since -= 24 * HOUR;
+  app.holds.get(0).since -= 48 * HOUR;
+  app.holds.get(0).sinceMono -= 48 * HOUR;
   lambda.regs.set(5006, 0xffff);
+  await advance(clock, 21_000);
+  await waitFor(() => lambda.regs.get(5006) === 0, 'the stop written again');
+  assert.equal(app.holds.get(0).key, 'off');
+  assert.deepEqual(await command(gladys, hc, 'mode', 'summer'), { success: true });
+  app.holds.get(0).sinceMono -= 24 * HOUR;
   const count = writesTo(lambda, 5006).length;
   await advance(clock, 40_000);
   assert.equal(writesTo(lambda, 5006).length, count);
   assert.equal(app.holds.size, 0);
+  assert.match(gladys.fake.connectionStatus.message.en, /the controller takes over/);
 });
 
 test('I1: the hold ends when the circuit leaves the configuration, the address is cleared, or the device is deleted', async (t) => {

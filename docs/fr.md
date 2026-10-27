@@ -85,19 +85,31 @@ reçoit « non confirmé » et reste réécrit toutes les 20 s. Il n'attend que 
 aucune adresse n'est connue du tout (pas de configuration et rien dans
 `/data`) : il est alors écrit dès qu'elle l'est.
 
-Garder l'arrêt écrase tout autre acteur qui demanderait un mode par Modbus
-entre-temps ; c'est pourquoi Gladys relit le mode avant chaque nouvelle
-écriture. Le maintien prend fin, et le régulateur revient à son propre
-réglage quand la dernière demande expire, lorsque :
+Garder l'arrêt écraserait tout autre acteur qui demande un mode par Modbus :
+Gladys relit donc le mode avant chaque nouvelle écriture. L'arrêt ne prend
+jamais fin avec le temps ; le statut dit depuis quand il est maintenu. Il
+prend fin, et le régulateur revient à son propre réglage quand la dernière
+demande expire (le chauffage peut alors repartir), seulement lorsque :
 
-- une lecture montre un autre mode que l'arrêt (choisi au panneau ou par un
-  autre client Modbus) : Gladys ne l'écrase jamais (une demande seulement
-  expirée, -1, est réécrite) ;
-- 24 heures se sont écoulées depuis le clic ;
+- deux lectures de suite (à 2 s d'écart) montrent une autre demande de mode
+  documentée (2 à 6 : automatique, chauffage ou rafraîchissement
+  automatique, hors-gel, été) qui n'est ni l'arrêt ni la demande lue avant
+  l'arrêt. C'est ainsi qu'on en sort depuis le panneau ou un autre client
+  Modbus. Gladys n'écrit rien entre les deux lectures. Tout le reste est
+  réécrit : une demande seulement expirée (-1), la demande lue avant l'arrêt
+  (l'arrêt pas encore appliqué : après trois lectures de ce genre, le statut
+  dit que le régulateur ne l'applique pas), un code inconnu, « manuel » ou
+  « chape » (1, 7), une valeur sentinelle, une lecture ratée ;
 - le circuit est retiré de la configuration (moins de circuits), son appareil
   est supprimé, ou l'adresse est effacée ou changée ;
 - un autre mode ou **Aucune demande** est choisi dans Gladys : les deux
   relancent le chauffage, donc les deux exigent « Autoriser les commandes ».
+
+Après un redémarrage de l'intégration, l'arrêt gardé dans `/data` est écrit
+une fois sans lecture préalable : un mode choisi au panneau pendant que
+l'intégration était arrêtée est écrasé cette fois-là, puis respecté comme
+ci-dessus (deux lectures de suite) dès le rafraîchissement suivant, 20 s plus
+tard.
 
 Une commande envoyée avant l'arrêt et encore en attente est abandonnée.
 
@@ -113,7 +125,8 @@ une commande plus récente) est laissée telle quelle.
 
 - **Mode** d'un circuit de chauffage : automatique, chauffage automatique,
   rafraîchissement automatique, hors-gel, été, ou « Aucune demande ». Le mode
-  choisi est gardé et réécrit toutes les 20 s tant que l'option est activée ;
+  choisi est gardé et réécrit toutes les 20 s tant que l'option est activée,
+  pendant 24 heures au plus (le régulateur reprend ensuite la main) ;
   désactiver l'option l'arrête, un redémarrage aussi (seul un arrêt est
   gardé). « Manuel » et « Programme de chape » sont affichés par le
   régulateur mais jamais réglés.
