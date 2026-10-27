@@ -47,7 +47,7 @@ test('the stop of a circuit: option off, written at once (no read before), read 
   assert.equal(store.data.holds[0].from, -1, 'the request before the stop: none');
   assert.match(
     gladys.fake.connectionStatus.message.en,
-    /Heating circuit 1 held off by Gladys since 20\d\d-\d\d-\d\d \d\d:\d\d UTC/,
+    /Heating circuit 1 held off by Gladys since 20\d\d-\d\d-\d\d \d\d:\d\d( UTC)? \(/,
   );
   assert.equal(app.config.allowCommands, false);
 });

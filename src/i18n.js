@@ -296,16 +296,35 @@ export const T = {
     ),
   notes: {
     failing: (list) => w(`Not read: ${list}.`, `Non lus : ${list}.`),
-    heldSince: (n, since) =>
-      w(
-        `Heating circuit ${n} held off by Gladys since ${since} (to end it: another mode or "No request" with the commands allowed, or another mode at the panel).`,
-        `Circuit de chauffage ${n} maintenu à l'arrêt par Gladys depuis ${since} (pour en sortir : un autre mode ou « Aucune demande » avec les commandes autorisées, ou un autre mode au panneau).`,
-      ),
-    stopNotApplied: (n) =>
-      w(
-        `The controller does not apply the stop of heating circuit ${n}: written again every 20 s.`,
-        `Le régulateur n'applique pas l'arrêt du circuit de chauffage ${n} : réécrit toutes les 20 s.`,
-      ),
+    /** `held`: [{ n, since }], one entry per circuit held off (12 at most). */
+    heldOff: (held) => {
+      const exit = w(
+        'another mode or "No request" in Gladys with the commands allowed, or, from another Modbus client or at the panel, a mode other than the one requested before the stop',
+        "un autre mode ou « Aucune demande » dans Gladys avec les commandes autorisées, ou, par un autre client Modbus ou au panneau, un mode autre que celui demandé avant l'arrêt",
+      );
+      if (held.length === 1) {
+        const [{ n, since }] = held;
+        return w(
+          `Heating circuit ${n} held off by Gladys since ${since} (to end it: ${exit.en}).`,
+          `Circuit de chauffage ${n} maintenu à l'arrêt par Gladys depuis le ${since} (pour en sortir : ${exit.fr}).`,
+        );
+      }
+      return w(
+        `Heating circuits held off by Gladys: ${held.map(({ n, since }) => `${n} since ${since}`).join(', ')} (to end a stop: ${exit.en}).`,
+        `Circuits de chauffage maintenus à l'arrêt par Gladys : ${held.map(({ n, since }) => `${n} depuis le ${since}`).join(', ')} (pour sortir d'un arrêt : ${exit.fr}).`,
+      );
+    },
+    /** `list`: the numbers of the circuits whose stop the controller does not apply. */
+    stopNotApplied: (list) =>
+      list.length === 1
+        ? w(
+            `The controller does not apply the stop of heating circuit ${list[0]}: written again every 20 s.`,
+            `Le régulateur n'applique pas l'arrêt du circuit de chauffage ${list[0]} : réécrit toutes les 20 s.`,
+          )
+        : w(
+            `The controller does not apply the stop of heating circuits ${list.join(', ')}: written again every 20 s.`,
+            `Le régulateur n'applique pas l'arrêt des circuits de chauffage ${list.join(', ')} : réécrits toutes les 20 s.`,
+          ),
     released: (n, reason) =>
       w(
         `Heating circuit ${n} no longer held by Gladys (${reason}).`,

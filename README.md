@@ -11,10 +11,11 @@ controller: no cloud, no account.
   tanks, buffer tanks, heating circuits (temperatures, COP, compressor rating,
   heating output, power drawn, states, errors, setpoints).
 - Stopping a heating circuit is always allowed: held, written again every
-  20 s, kept across a restart, never ended by time. It ends when another mode
-  is chosen at the panel (read twice in a row), when another mode or "No
-  request" is chosen in Gladys (commands allowed), or when the circuit or the
-  address leaves the configuration.
+  20 s, kept across a restart, never ended by time. It ends when another
+  Modbus client (or, to be confirmed, the panel) asks for a mode other than
+  the one requested before the stop (read twice in a row), when another mode
+  or "No request" is chosen in Gladys (commands allowed), or when the circuit
+  or the address leaves the configuration.
 - Other modes, the room setpoint and the hot water setpoint only with the
   "Allow the commands" option (off by default); hot water capped at 55 °C by
   default, never above 60 °C.

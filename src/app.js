@@ -80,13 +80,51 @@ const signedCode = (word) =>
   word === undefined ? undefined : word >= 0x8000 ? word - 0x10000 : word;
 /** Mode requests another actor may write (the manual's RW codes but the stop): 2 to 6. */
 const OTHER_MODES = new Set([2, 3, 4, 5, 6]);
+/**
+ * The documented requests other than the stop (-1 from the reference, 1 to 7
+ * from the manual): the only codes kept as the request a stop overrides
+ * (`from`). An unknown code, a sentinel or 0x8000 says nothing of it.
+ */
+const REQUESTS = new Set([-1, 1, 2, 3, 4, 5, 6, 7]);
 
 /** A refusal: an Error whose message is the text in the configured language. */
 class Refusal extends Error {}
 
-/** A wall-clock date for the status: "2026-10-27 14:05 UTC". */
-const stamp = (ms) =>
-  Number.isFinite(ms) ? `${new Date(ms).toISOString().slice(0, 16).replace('T', ' ')} UTC` : '?';
+const STAMP = {
+  year: 'numeric',
+  month: '2-digit',
+  day: '2-digit',
+  hour: '2-digit',
+  minute: '2-digit',
+  hourCycle: 'h23',
+};
+/** Zones that are UTC, or say nothing (an unknown TZ): the date is then said in UTC. */
+const UTC_ZONES = new Set(['UTC', 'Etc/UTC', 'GMT', 'Etc/GMT', '+00:00', 'Etc/Unknown']);
+
+/**
+ * A wall-clock date for the status, in the time zone of Gladys (TZ, given to
+ * the container): "2026-10-27 15:05"; "2026-10-27 14:05 UTC" when that zone
+ * is UTC or unknown.
+ */
+export function stamp(ms, timeZone) {
+  if (!Number.isFinite(ms)) {
+    return '?';
+  }
+  let zone;
+  try {
+    zone = new Intl.DateTimeFormat('en-GB', { ...STAMP, timeZone }).resolvedOptions().timeZone;
+  } catch {
+    zone = undefined;
+  }
+  const utc = !zone || UTC_ZONES.has(zone);
+  const parts = Object.fromEntries(
+    new Intl.DateTimeFormat('en-GB', { ...STAMP, timeZone: utc ? 'UTC' : zone })
+      .formatToParts(new Date(ms))
+      .map((p) => [p.type, p.value]),
+  );
+  const date = `${parts.year}-${parts.month}-${parts.day} ${parts.hour}:${parts.minute}`;
+  return utc ? `${date} UTC` : date;
+}
 
 export class LambdaApp {
   constructor({
@@ -97,11 +135,14 @@ export class LambdaApp {
     monotonic = () => performance.now(),
     timers = globalThis,
     store = new FileStore({ now }),
+    timeZone = process.env.TZ || undefined,
   }) {
     this.gladys = gladys;
     this.logger = logger;
     /** The socket factory (tests); node:net otherwise. */
     this.connect = connect;
+    /** The time zone of Gladys (TZ): the dates of the status. */
+    this.timeZone = timeZone;
     this.now = now;
     this.monotonic = monotonic;
     this.timers = timers;
@@ -137,7 +178,11 @@ export class LambdaApp {
     this.lastStatus = undefined;
     this.published = undefined;
     this.badge = undefined;
-    /** hc index -> { key, code, protective } : the mode request held (written again every 20 s). */
+    /**
+     * hc index -> { key, code, protective, from, applied, ... }: the mode request
+     * held (written again every 20 s); `from` the request it overrides, `applied`
+     * once a read showed it.
+     */
     this.holds = new Map();
     this.refreshTimer = undefined;
     this.refreshing = undefined;
@@ -187,7 +232,7 @@ export class LambdaApp {
           protective: true,
           since: hold.at,
           sinceMono: this.monotonic(),
-          from: hold.from,
+          from: REQUESTS.has(hold.from) ? hold.from : undefined,
           resumed: true,
         });
       }
@@ -786,17 +831,28 @@ export class LambdaApp {
     return this.config.invalid ? join([message, T.invalid(this.config.invalid)]) : message;
   }
 
-  /** What the status says whatever the connection: stops held, a release, /data. */
+  /**
+   * What the status says whatever the connection: stops held, a release,
+   * /data. One note for all the circuits held (bounded: 12 circuits at most).
+   */
   holdNotes() {
     const notes = [];
+    const held = [];
+    const notApplied = [];
     for (const [index, hold] of this.holds) {
       if (hold.key !== 'off') {
         continue;
       }
-      notes.push(T.notes.heldSince(index + 1, stamp(hold.since)));
+      held.push({ n: index + 1, since: stamp(hold.since, this.timeZone) });
       if ((hold.notApplied ?? 0) >= 3) {
-        notes.push(T.notes.stopNotApplied(index + 1));
+        notApplied.push(index + 1);
       }
+    }
+    if (held.length > 0) {
+      notes.push(T.notes.heldOff(held));
+    }
+    if (notApplied.length > 0) {
+      notes.push(T.notes.stopNotApplied(notApplied));
     }
     if (this.released) {
       notes.push(T.notes.released(this.released.index + 1, this.released.reason));
@@ -1086,7 +1142,8 @@ export class LambdaApp {
         since: at,
         sinceMono: this.monotonic(),
         // The request before the stop: seen again, it is the stop not applied, never a release.
-        from: from === MODE_CODES.off ? undefined : from,
+        // Unknown (no fresh read: an outage), the first request read stands for it (refreshHold).
+        from: REQUESTS.has(from) ? from : undefined,
       });
       this.data.holds[index] = { mode: 'off', at };
     } else {
@@ -1119,7 +1176,11 @@ export class LambdaApp {
     try {
       const outcome = await this.sendProtective(client, command, received, before);
       const hold = command.role === 'mode' ? this.holds.get(index) : undefined;
-      if (hold?.protective && outcome.got !== undefined && outcome.got !== command.word) {
+      if (hold?.protective && outcome.got === command.word) {
+        hold.applied = true;
+      } else if (hold?.protective && REQUESTS.has(signedCode(outcome.got))) {
+        // Read back unchanged: the request the stop overrides. An unknown code,
+        // a sentinel or 0x8000 says nothing of it: `from` is kept as it was.
         hold.from = signedCode(outcome.got);
         this.saveData();
       }
@@ -1225,7 +1286,10 @@ export class LambdaApp {
   describe(command, raw) {
     const value = decodeWord(specOf(command.kind, command.role), raw);
     if (command.role === 'mode') {
-      return value?.key ? word(MODE_NAMES[value.key], this.config.language) : `${value?.code}`;
+      if (value === undefined) {
+        return '?';
+      }
+      return value.key ? word(MODE_NAMES[value.key], this.config.language) : `${value.code}`;
     }
     return value === undefined ? '?' : `${value} °C`;
   }
@@ -1450,11 +1514,31 @@ export class LambdaApp {
   }
 
   /**
+   * What a read of the mode teaches a held request. Ours read: applied. A stop
+   * whose request before is unknown (clicked during an outage, /data without
+   * it) and never read applied: the documented request read is the one it
+   * overrides (kept as `from`, in /data), never a proof of a change.
+   */
+  learn(hold, code) {
+    if (code === undefined) {
+      return;
+    }
+    if (code === hold.code) {
+      hold.applied = true;
+    } else if (hold.protective && hold.from === undefined && !hold.applied && REQUESTS.has(code)) {
+      hold.from = code;
+      this.saveData();
+    }
+  }
+
+  /**
    * One held request: read, then written again. Let go only on proof that
    * another actor asked for another mode: a documented request (2 to 6) that
    * is neither ours nor the one before ours, read twice in a row. An unknown
    * code, a sentinel, -1, a failed read or the request before ours (ours not
-   * applied) never lets go: the request is written again.
+   * applied) never lets go: the request is written again. When the request
+   * before a stop is unknown, the first one read before the stop was seen
+   * applied stands for it (`learn`): a stop that never took is never let go.
    */
   async refreshHold(client, index, hold) {
     const register = registerOf('hc', index, specOf('hc', 'mode').at);
@@ -1475,6 +1559,7 @@ export class LambdaApp {
         if (this.holds.get(index) !== hold) {
           return;
         }
+        this.learn(hold, code);
         const other = OTHER_MODES.has(code) && code !== hold.code && code !== hold.from;
         hold.notApplied = code !== undefined && code === hold.from ? (hold.notApplied ?? 0) + 1 : 0;
         if (!other) {

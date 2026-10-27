@@ -34,6 +34,35 @@ Handoff document: what is done, what was decided, what comes next.
 
 ## Decisions
 
+- **Review r3 (2026-10-27)**:
+  - B1: a stop whose request before is unknown (clicked during an outage, no
+    fresh read; /data without it) is never let go on the request it
+    overrides. Of the two fixes asked, both halves are kept, as the safest
+    together: until a read shows the stop applied (0), the first documented
+    request read (-1 to 7) becomes `from` (in /data) and is written over;
+    once the stop was read applied, a request 2 to 6 read twice lets go (a
+    change made after it). Requiring 0 alone would write over a newer mode
+    set elsewhere while the controller never applied the stop (fiche: the
+    resend never targets a newer move) and would never show the "not
+    applied" note; adopting alone would also adopt a change made after the
+    stop took.
+  - Same doubt, found here: a read back that is not a documented request
+    (0x8000, -3000, an unknown code) no longer replaces a known `from` (it
+    made the stop not applied look like a change); `from` from memory or
+    /data is kept only when documented.
+  - Status: dates in the time zone of Gladys (TZ, given to the container),
+    UTC said only when the zone is unknown; one note for every circuit held
+    (12 at most), the way out said once ("a mode other than the one
+    requested before the stop").
+  - Docs: a mode chosen meanwhile is lost at the start-up write; only a newer
+    choice, other than the request before the stop, ends it. Panel exit
+    marked as to be confirmed in "Not done".
+  - Tests: s17 (both outcomes), the stop read applied then changed, `from`
+    from the read back and from /data, an unknown code never kept as `from`,
+    the start-up write (s19), the release
+    note cleared, a failure after an "accepted" ack, local time, the bounded
+    note; the "joined" dial test now holds the dial open (it joined nothing).
+
 - **Review r2 (2026-10-27)**:
   - B1: the stop keeps the request read before it (`from`, in /data). It is
     let go only when two reads in a row, 2 s apart (`holdConfirm`), show a
@@ -53,8 +82,8 @@ Handoff document: what is done, what was decided, what comes next.
     respected from the next refresh. `resumed` is cleared only once that
     write was acknowledged.
   - Minors: `released` cleared by a new hold of the circuit; notices fence
-    closed with four backticks; tests for the failed read, the joined dial,
-    another address and the offline notes.
+    closed (three backticks on both sides); tests for the failed read, the
+    joined dial, another address and the offline notes.
 
 - **Review r1 (2026-10-27)**:
   - B1: the client is created from the controller kept in /data at boot,

@@ -227,6 +227,10 @@ test('a connection still being opened is joined: never two at once', async (t) =
   t.after(() => lambda.close());
   const clock = testClock();
   let dials = 0;
+  let letThrough;
+  const gate = new Promise((resolve) => {
+    letThrough = resolve;
+  });
   const net = await import('node:net');
   const c = new ModbusClient({
     host: '127.0.0.1',
@@ -234,15 +238,26 @@ test('a connection still being opened is joined: never two at once', async (t) =
     unitId: 1,
     timers: clock.timers,
     monotonic: clock.monotonic,
+    // A slow handshake: the connection opens only once the test lets it through.
     connect: (options) => {
       dials += 1;
-      return net.createConnection(options);
+      const socket = new net.Socket();
+      gate.then(() => socket.connect(options));
+      return socket;
     },
   });
   t.after(() => c.close());
-  const late = c.readHolding(0, 2, { startBy: clock.monotonic() }).catch((err) => err);
+  // The first request gives up (too late) while its connection is still being opened.
+  const late = c.readHolding(0, 2, { startBy: clock.monotonic() + 100 }).catch((err) => err);
+  await sleep(10);
+  await clock.advance(200);
+  assert.equal((await late).kind, ERROR_KINDS.LATE);
+  assert.equal(dials, 1);
+  // The next one joins that connection: no second dial.
   const next = c.readHolding(0, 2);
-  await late;
+  await sleep(10);
+  assert.equal(dials, 1, 'the dial under way is joined');
+  letThrough();
   assert.deepEqual(await next, [0, 1]);
   assert.equal(dials, 1);
   assert.equal(lambda.peak, 1);

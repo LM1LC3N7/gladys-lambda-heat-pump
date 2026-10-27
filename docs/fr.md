@@ -87,29 +87,37 @@ aucune adresse n'est connue du tout (pas de configuration et rien dans
 
 Garder l'arrêt écraserait tout autre acteur qui demande un mode par Modbus :
 Gladys relit donc le mode avant chaque nouvelle écriture. L'arrêt ne prend
-jamais fin avec le temps ; le statut dit depuis quand il est maintenu. Il
+jamais fin avec le temps ; le statut dit depuis quand il est maintenu (à
+l'heure de Gladys). Il
 prend fin, et le régulateur revient à son propre réglage quand la dernière
 demande expire (le chauffage peut alors repartir), seulement lorsque :
 
 - deux lectures de suite (à 2 s d'écart) montrent une autre demande de mode
   documentée (2 à 6 : automatique, chauffage ou rafraîchissement
   automatique, hors-gel, été) qui n'est ni l'arrêt ni la demande lue avant
-  l'arrêt. C'est ainsi qu'on en sort depuis le panneau ou un autre client
-  Modbus. Gladys n'écrit rien entre les deux lectures. Tout le reste est
-  réécrit : une demande seulement expirée (-1), la demande lue avant l'arrêt
-  (l'arrêt pas encore appliqué : après trois lectures de ce genre, le statut
-  dit que le régulateur ne l'applique pas), un code inconnu, « manuel » ou
-  « chape » (1, 7), une valeur sentinelle, une lecture ratée ;
+  l'arrêt. C'est ainsi qu'on en sort par un autre client Modbus, et sans
+  doute par le panneau (à confirmer, voir plus bas). Gladys n'écrit rien
+  entre les deux lectures. Tout le reste est réécrit : une demande seulement
+  expirée (-1), la demande lue avant l'arrêt (l'arrêt pas encore appliqué :
+  après trois lectures de ce genre, le statut dit que le régulateur ne
+  l'applique pas), un code inconnu, « manuel » ou « chape » (1, 7), une
+  valeur sentinelle, une lecture ratée. Si la demande d'avant l'arrêt n'est
+  pas connue (arrêt choisi pendant une panne, sans lecture récente), la
+  première demande documentée (-1 à 7) relue tant que l'arrêt n'a pas été
+  relu appliqué en tient lieu : elle est réécrite, jamais prise pour un
+  changement. Un arrêt relu appliqué sans demande d'avant connue est levé par
+  toute demande de 2 à 6 lue deux fois de suite ;
 - le circuit est retiré de la configuration (moins de circuits), son appareil
   est supprimé, ou l'adresse est effacée ou changée ;
 - un autre mode ou **Aucune demande** est choisi dans Gladys : les deux
   relancent le chauffage, donc les deux exigent « Autoriser les commandes ».
 
 Après un redémarrage de l'intégration, l'arrêt gardé dans `/data` est écrit
-une fois sans lecture préalable : un mode choisi au panneau pendant que
-l'intégration était arrêtée est écrasé cette fois-là, puis respecté comme
-ci-dessus (deux lectures de suite) dès le rafraîchissement suivant, 20 s plus
-tard.
+une fois sans lecture préalable : un mode choisi au panneau ou par un autre
+client pendant que l'intégration était arrêtée est écrasé, donc perdu. Gladys
+relit ensuite le mode avant chaque écriture (toutes les 20 s) : seul un choix
+fait après cette première écriture, et autre que la demande d'avant l'arrêt,
+lève l'arrêt comme ci-dessus (deux lectures de suite).
 
 Une commande envoyée avant l'arrêt et encore en attente est abandonnée.
 
@@ -148,6 +156,11 @@ d'autres est alors acceptée et son résultat journalisé. Elle part dans les
 - Jamais testé avec un vrai régulateur : la carte des registres, l'échelle
   du COP et le délai d'expiration d'une demande de mode sont à confirmer sur
   un vrai.
+- Il reste à vérifier qu'un mode choisi au panneau du régulateur apparaît
+  dans la demande Modbus (registre 5x06) : c'est ce qui permet de lever un
+  arrêt depuis le panneau. D'ici là, les moyens sûrs sont Gladys (un autre
+  mode ou « Aucune demande », commandes autorisées) et un autre client
+  Modbus.
 - Pas de module solaire, pas d'index d'énergie, pas de demandes de surplus
   photovoltaïque ni du tampon (elles doivent être réécrites régulièrement et
   pilotent directement la pompe à chaleur).

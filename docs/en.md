@@ -81,27 +81,36 @@ only when no address is known at all (no configuration and nothing in
 
 Holding the stop would override any other actor that asks for a mode
 through Modbus, so Gladys reads the mode before each new write. The stop
-never ends by time; the status says since when it is held. It ends, and the
+never ends by time; the status says since when it is held (in the time zone
+of Gladys). It ends, and the
 controller goes back to its own setting once the last request lapses (the
 heating may then start again), only when:
 
 - two reads in a row (2 s apart) show another documented mode request (2 to
   6: automatic, automatic heating or cooling, frost protection, summer) that
   is neither the stop nor the request read before the stop. This is how to
-  end it from the panel or another Modbus client. Gladys writes nothing
-  between the two reads. Anything else is written over: a request that only
-  lapsed (-1), the request read before the stop (the stop not applied yet:
-  after three such reads the status says the controller does not apply it),
-  an unknown code, "manual" or "screed" (1, 7), a sentinel, a failed read;
+  end it from another Modbus client, and most likely from the panel (to be
+  confirmed, see below). Gladys writes nothing between the two reads.
+  Anything else is written over: a request that only lapsed (-1), the
+  request read before the stop (the stop not applied yet: after three such
+  reads the status says the controller does not apply it), an unknown code,
+  "manual" or "screed" (1, 7), a sentinel, a failed read. When the request
+  before the stop is not known (the stop chosen during an outage, without a
+  recent read), the first documented request (-1 to 7) read while the stop
+  was never read applied stands for it: it is written over, never taken for
+  a change. A stop read applied with no request before known is ended by any
+  request 2 to 6 read twice in a row;
 - the heating circuit is removed from the configuration (fewer heating
   circuits), its device is deleted, or the address is cleared or changed;
 - another mode or **No request** is chosen in Gladys: both start the heating
   again, so both need "Allow the commands".
 
 After a restart of the integration the stop kept in `/data` is written once
-without a read first: a mode chosen at the panel while the integration was
-stopped is overwritten that once, then respected as above (two reads in a
-row) from the next refresh, 20 s later.
+without a read first: a mode chosen at the panel or by another client while
+the integration was stopped is overwritten, so it is lost. Gladys then reads
+the mode before each write (every 20 s): only a choice made after that first
+write, and other than the request before the stop, ends the stop as above
+(two reads in a row).
 
 A command sent before the stop and still waiting is dropped.
 
@@ -136,5 +145,9 @@ and its outcome logged. It is sent within 10 s of the click, or not at all.
 
 - Never tested with a real controller: the register map, the COP scale and
   the delay before a mode request lapses need confirming on a real one.
+- Whether a mode chosen at the panel of the controller shows in the Modbus
+  request (register 5x06) is still to be checked: that is what lets the
+  panel end a stop. Until then, the proven ways are Gladys (another mode or
+  "No request", commands allowed) and another Modbus client.
 - No solar module, no energy index, no PV surplus nor buffer requests (they
   must be written regularly and drive the heat pump directly).

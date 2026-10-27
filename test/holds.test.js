@@ -78,7 +78,7 @@ test('B1: the controller kept in /data, getConfig() failing: a stop leaves at on
   await waitFor(() => lambda.regs.get(5006) === 0, 'written again');
   assert.match(
     gladys.fake.connectionStatus.message.en,
-    /Heating circuit 1 held off by Gladys since 20\d\d-\d\d-\d\d \d\d:\d\d UTC/,
+    /Heating circuit 1 held off by Gladys since 20\d\d-\d\d-\d\d \d\d:\d\d( UTC)? \(/,
   );
 });
 

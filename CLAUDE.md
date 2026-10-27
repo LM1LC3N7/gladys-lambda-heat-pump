@@ -60,7 +60,9 @@ scripts/cover.mjs         cover.png generator
   at boot) and setpoints at their floor (room 15 °C, hot water 25 °C).
   The stop never ends by time; it lets go on a documented other mode (2-6,
   not `from`) read twice in a row, the circuit or the address leaving the
-  configuration, the device deleted. Other held modes end after 24 h. A
+  configuration, the device deleted. `from` unknown (clicked during an
+  outage): the first documented request read before the stop is read
+  applied stands for it, never a proof. Other held modes end after 24 h. A
   floor is written again only while a read shows the value it replaced.
 - **Sensitive** (`allow_commands`, off by default, checked on arrival and in
   `beforeSend`): other modes, release, other setpoints. Fresh read first; one
