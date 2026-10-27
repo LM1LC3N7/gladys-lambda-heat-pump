@@ -10,6 +10,8 @@ the notes of the version's GitHub Release.
 
 ## [Unreleased]
 
+## [0.1.1] - 2026-10-27
+
 ### Added
 
 - First version: Lambda heat pumps (EU-L series) over local Modbus TCP. One
@@ -24,4 +26,5 @@ the notes of the version's GitHub Release.
 - Optional commands, off by default: heating circuit mode, room setpoint,
   hot water setpoint (55 °C ceiling by default, never above 60 °C).
 
-[Unreleased]: https://github.com/LM1LC3N7/gladys-lambda-heat-pump/commits/main
+[Unreleased]: https://github.com/LM1LC3N7/gladys-lambda-heat-pump/compare/v0.1.1...HEAD
+[0.1.1]: https://github.com/LM1LC3N7/gladys-lambda-heat-pump/releases/tag/v0.1.1
