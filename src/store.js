@@ -62,7 +62,8 @@ export function sanitize(data, now = Date.now()) {
   }
   if (data.holds && typeof data.holds === 'object') {
     for (const [key, hold] of Object.entries(data.holds).slice(0, HC_MAX)) {
-      // A stop is kept whatever its date: dropping it would restart the heating.
+      // A date in the future (a clock set back) counts from now; the hold
+      // itself ends after 24 h (src/app.js), never on a date it cannot trust.
       if (/^\d{1,2}$/.test(key) && Number(key) < HC_MAX && hold && hold.mode === 'off') {
         const at = finite(hold.at);
         base.holds[key] = { mode: 'off', at: at !== undefined && at <= now ? at : now };
@@ -83,7 +84,12 @@ export function sanitize(data, now = Date.now()) {
         sends >= 0 &&
         sends < TIMINGS.floorResends
       ) {
-        base.floors[key] = { at, sends };
+        const from = floor.from;
+        base.floors[key] = {
+          at,
+          sends,
+          ...(Number.isInteger(from) && from >= 0 && from <= 0xffff ? { from } : {}),
+        };
       }
     }
   }

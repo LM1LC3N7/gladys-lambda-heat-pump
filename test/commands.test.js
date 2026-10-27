@@ -151,7 +151,8 @@ test('nothing queued before a stop leaves after it', async (t) => {
   assert.deepEqual(await stop, { success: true });
   await advance(clock, 12_000);
   const ack = await summer;
-  assert.ok(ack.success === false || ack.success === true);
+  assert.equal(ack.success, false);
+  assert.match(ack.error, /^Rien envoyé/);
   assert.ok(writesTo(lambda, 5006).length >= 1);
   assert.ok(
     writesTo(lambda, 5006).every((v) => v === 0),
@@ -317,10 +318,10 @@ test('a write without its answer is "sent, without confirmation"; the next one i
   assert.equal(ack.success, false);
   assert.match(ack.error, /sans confirmation|without confirmation/);
   lambda.silent = undefined;
-  await advance(clock, 25_000);
-  // The guard: the same value is written again, never answered "already so".
-  lambda.regs.set(5051, 210);
+  // Applied without an answer: the controller shows 22 °C, the guard still holds.
+  lambda.regs.set(5051, 220);
   assert.deepEqual(await command(gladys, hc, 'room-setpoint', 22), { success: true });
+  // The guard: the same value is written again, never answered "already so".
   assert.deepEqual(writesTo(lambda, 5051), [220, 220]);
 });
 

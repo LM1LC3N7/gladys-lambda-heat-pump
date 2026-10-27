@@ -72,23 +72,35 @@ read back, kept in `/data` and written again every 20 s, also after a
 restart of the integration, before Gladys or its configuration are reached.
 
 The stop is not refused for the option, a read or command in progress, a
-configuration Gladys cannot read, `/data` that cannot be written (the status
-says the stop will not survive a restart) or a heating circuit missing from
-the configuration. A stop that the controller does not acknowledge, or reads
-back otherwise, is answered "not confirmed" and still written every 20 s. It
-waits only when no address is known yet (no configuration and nothing in
+configuration Gladys cannot read (the controller kept in `/data` is used) or
+`/data` that cannot be written (the status says the stop will not survive a
+restart). A stop that the controller does not acknowledge, or reads back
+otherwise, is answered "not confirmed" and still written every 20 s. It waits
+only when no address is known at all (no configuration and nothing in
 `/data`): then it is written as soon as the address is.
 
-The stop ends only when another mode has been written (the option on), or
-with **No request**: Gladys then stops writing it, and the controller goes
-back to its own setting once the request lapses. A command sent before the
-stop and still waiting is dropped.
+Holding the stop overrides any other actor that asks for a mode through
+Modbus in between, which is why Gladys reads the mode before each new write.
+The hold ends, and the controller goes back to its own setting once the last
+request lapses, when:
+
+- a read shows another mode than the stop (chosen at the panel or by another
+  Modbus client): Gladys never writes over it (a request that only lapsed,
+  -1, is written again);
+- 24 hours have passed since the click;
+- the heating circuit is removed from the configuration (fewer heating
+  circuits), its device is deleted, or the address is cleared or changed;
+- another mode or **No request** is chosen in Gladys: both start the heating
+  again, so both need "Allow the commands".
+
+A command sent before the stop and still waiting is dropped.
 
 ### Setpoints at their minimum (always allowed)
 
 A room setpoint of 15 °C or a hot water setpoint of 25 °C is written whatever
 the option. When it is not read back, the next three reads (within 15
-minutes) write it again.
+minutes) write it again, as long as they still show the value it replaced:
+a setpoint changed since (at the panel or by a newer command) is left alone.
 
 ### Other commands (option "Allow the commands")
 

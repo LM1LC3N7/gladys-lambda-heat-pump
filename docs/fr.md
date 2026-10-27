@@ -77,24 +77,37 @@ réécrit toutes les 20 s, y compris après un redémarrage de l'intégration,
 avant même que Gladys ou sa configuration soient joints.
 
 L'arrêt n'est refusé ni pour l'option, ni pour une lecture ou une commande
-en cours, ni pour une configuration que Gladys ne peut pas lire, ni pour un
-`/data` non inscriptible (le statut dit alors que l'arrêt ne survivra pas à
-un redémarrage), ni pour un circuit absent de la configuration. Un arrêt que
-le régulateur n'acquitte pas, ou relit autrement, reçoit « non confirmé » et
-reste réécrit toutes les 20 s. Il n'attend que si aucune adresse n'est
-encore connue (pas de configuration et rien dans `/data`) : il est alors
-écrit dès qu'elle l'est.
+en cours, ni pour une configuration que Gladys ne peut pas lire (le
+régulateur gardé dans `/data` sert alors), ni pour un `/data` non
+inscriptible (le statut dit alors que l'arrêt ne survivra pas à un
+redémarrage). Un arrêt que le régulateur n'acquitte pas, ou relit autrement,
+reçoit « non confirmé » et reste réécrit toutes les 20 s. Il n'attend que si
+aucune adresse n'est connue du tout (pas de configuration et rien dans
+`/data`) : il est alors écrit dès qu'elle l'est.
 
-L'arrêt ne prend fin que lorsqu'un autre mode a été écrit (option activée),
-ou avec **Aucune demande** : Gladys cesse alors de l'écrire, et le régulateur
-revient à son propre réglage quand la demande expire. Une commande envoyée
-avant l'arrêt et encore en attente est abandonnée.
+Garder l'arrêt écrase tout autre acteur qui demanderait un mode par Modbus
+entre-temps ; c'est pourquoi Gladys relit le mode avant chaque nouvelle
+écriture. Le maintien prend fin, et le régulateur revient à son propre
+réglage quand la dernière demande expire, lorsque :
+
+- une lecture montre un autre mode que l'arrêt (choisi au panneau ou par un
+  autre client Modbus) : Gladys ne l'écrase jamais (une demande seulement
+  expirée, -1, est réécrite) ;
+- 24 heures se sont écoulées depuis le clic ;
+- le circuit est retiré de la configuration (moins de circuits), son appareil
+  est supprimé, ou l'adresse est effacée ou changée ;
+- un autre mode ou **Aucune demande** est choisi dans Gladys : les deux
+  relancent le chauffage, donc les deux exigent « Autoriser les commandes ».
+
+Une commande envoyée avant l'arrêt et encore en attente est abandonnée.
 
 ### Consignes à leur minimum (toujours possibles)
 
 Une consigne ambiante de 15 °C ou une consigne d'eau chaude de 25 °C est
 écrite quelle que soit l'option. Si elle n'est pas relue, les trois lectures
-suivantes (dans les 15 minutes) la réécrivent.
+suivantes (dans les 15 minutes) la réécrivent, tant qu'elles montrent encore
+la valeur qu'elle remplace : une consigne changée depuis (au panneau ou par
+une commande plus récente) est laissée telle quelle.
 
 ### Autres commandes (option « Autoriser les commandes »)
 

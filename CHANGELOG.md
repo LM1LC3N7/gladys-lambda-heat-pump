@@ -17,7 +17,8 @@ the notes of the version's GitHub Release.
   buffer tanks, heating circuits): temperatures, COP, compressor rating,
   heating output, power drawn, states and errors, setpoints.
 - Stopping a heating circuit, always allowed: held and written again every
-  20 s, kept across a restart.
+  20 s, kept across a restart; let go when another mode is asked elsewhere,
+  after 24 h, or when the circuit or the address leaves the configuration.
 - Optional commands, off by default: heating circuit mode, room setpoint,
   hot water setpoint (55 °C ceiling by default, never above 60 °C).
 

@@ -99,6 +99,8 @@ export class ModbusClient {
     this.pending = undefined;
     this.transaction = 0;
     this.closed = false;
+    /** The TCP connection being opened, shared by the requests that wait for it. */
+    this.connecting = undefined;
     this.idleTimer = undefined;
     this.frozenTimer = undefined;
   }
@@ -365,7 +367,17 @@ export class ModbusClient {
       if (this.closing) {
         await Promise.race([this.closing, late]);
       }
-      await Promise.race([this.dial(), late]);
+      // A dial still under way (its first caller gave up) is joined, never doubled.
+      if (!this.connecting) {
+        const connecting = this.dial().finally(() => {
+          if (this.connecting === connecting) {
+            this.connecting = undefined;
+          }
+        });
+        connecting.catch(() => {});
+        this.connecting = connecting;
+      }
+      await Promise.race([this.connecting, late]);
     } finally {
       this.timers.clearTimeout(timer);
     }

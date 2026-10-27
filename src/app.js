@@ -172,7 +172,14 @@ export class LambdaApp {
     const at = this.now();
     for (const [key, hold] of Object.entries(data.holds)) {
       if (hold.mode === 'off' && !this.holds.has(Number(key))) {
-        this.holds.set(Number(key), { key: 'off', code: MODE_CODES.off, protective: true });
+        // Written once at start-up without a read first; read before each later write.
+        this.holds.set(Number(key), {
+          key: 'off',
+          code: MODE_CODES.off,
+          protective: true,
+          since: hold.at,
+          resumed: true,
+        });
       }
     }
     for (const [target, floor] of Object.entries(data.floors)) {
@@ -188,7 +195,9 @@ export class LambdaApp {
         });
       }
     }
-    if (!this.client && data.target && (this.holds.size > 0 || this.floors.size > 0)) {
+    // The controller kept in /data: a stop or a floor leaves even while the
+    // configuration cannot be read from Gladys.
+    if (!this.client && data.target) {
       this.useClient(data.target);
     }
     if (this.holds.size > 0) {
@@ -217,6 +226,33 @@ export class LambdaApp {
       monotonic: this.monotonic,
       ...(this.connect ? { connect: this.connect } : {}),
     });
+    // The stops held leave as soon as there is a controller to write to.
+    this.armRefresh(0);
+  }
+
+  /** The stops held and the floors no longer apply (another controller, none, a circuit removed). */
+  releaseAll(reason) {
+    for (const index of [...this.holds.keys()]) {
+      this.releaseHold(index, reason, { save: false });
+    }
+    this.floors.clear();
+    this.saveData();
+  }
+
+  /** A held request is no longer written; the controller follows its own setting once it lapses. */
+  releaseHold(index, reason, { save = true } = {}) {
+    const hold = this.holds.get(index);
+    if (!hold) {
+      return;
+    }
+    this.holds.delete(index);
+    delete this.data.holds[index];
+    this.released = { index, reason };
+    this.logger.info(`Heating circuit ${index + 1}: ${hold.key} no longer held (${reason})`);
+    if (save) {
+      this.saveData();
+    }
+    this.updateStatus().catch(() => {});
   }
 
   async start(raw = {}) {
@@ -240,9 +276,37 @@ export class LambdaApp {
     const target = this.config.address
       ? { ...this.config.address, unitId: this.config.unitId }
       : undefined;
+    const kept = this.data.target
+      ? `${this.data.target.host}:${this.data.target.port}#${this.data.target.unitId}`
+      : '';
     if (!target) {
+      // Address cleared: nothing is written any more, nothing kept for a restart.
+      if (this.holds.size > 0 || this.floors.size > 0 || this.data.target) {
+        this.releaseAll('address cleared');
+      }
+      this.data.target = undefined;
+      this.saveData();
+      this.client?.close();
+      this.client = undefined;
+      this.clientKey = '';
       await this.publishAll();
       return;
+    }
+    if (kept && kept !== targetKey(this.config)) {
+      // Another controller: what was held for the first one no longer applies.
+      this.releaseAll('another controller');
+    }
+    for (const index of [...this.holds.keys()]) {
+      if (index >= this.config.counts.heatingCircuits) {
+        this.releaseHold(index, 'circuit removed from the configuration');
+      }
+    }
+    for (const key of [...this.floors.keys()]) {
+      const [kind, i] = key.split('-');
+      if (!this.isConfigured(kind, Number(i))) {
+        this.floors.delete(key);
+        this.saveData();
+      }
     }
     if (targetKey(this.config) !== before && this.clientKey !== targetKey(this.config)) {
       // Another controller: what was read of the first one is dropped.
@@ -309,7 +373,7 @@ export class LambdaApp {
   /** getConfig() failed: said in the status (the stops held keep going). */
   async configUnread() {
     await this.boot();
-    await this.setStatus(false, T.configUnread);
+    await this.setStatus(false, this.withNotes(T.configUnread));
   }
 
   /**
@@ -377,12 +441,16 @@ export class LambdaApp {
     const holds = {};
     for (const [index, hold] of this.holds) {
       if (hold.key === 'off') {
-        holds[index] = { mode: 'off', at: this.data.holds[index]?.at ?? this.now() };
+        holds[index] = { mode: 'off', at: hold.since ?? this.data.holds[index]?.at ?? this.now() };
       }
     }
     const floors = {};
     for (const [target, floor] of this.floors) {
-      floors[target] = { at: floor.at, sends: floor.sends };
+      floors[target] = {
+        at: floor.at,
+        sends: floor.sends,
+        ...(floor.from !== undefined ? { from: floor.from } : {}),
+      };
     }
     this.data = { ...this.data, holds, floors };
     return this.data;
@@ -696,29 +764,42 @@ export class LambdaApp {
     return this.config.invalid ? join([message, T.invalid(this.config.invalid)]) : message;
   }
 
+  /** What the status says whatever the connection: stops held, a release, /data. */
+  holdNotes() {
+    const notes = [];
+    const held = [...this.holds].filter(([, h]) => h.key === 'off').map(([i]) => i + 1);
+    if (held.length > 0) {
+      notes.push(T.notes.held(held.join(', ')));
+    }
+    if (this.released) {
+      notes.push(T.notes.released(this.released.index + 1, this.released.reason));
+    }
+    if (!this.storeOk) {
+      notes.push(T.notes.storeUnavailable);
+    }
+    return notes;
+  }
+
+  withNotes(message) {
+    return join([message, ...this.holdNotes()]);
+  }
+
   status() {
     if (!this.config.address) {
-      return [false, this.withInvalid(T.noAddress)];
+      return [false, this.withNotes(this.withInvalid(T.noAddress))];
     }
     const address = addressKey(this.config.address);
     if (this.online === false) {
-      return [false, T.unreachable(address, this.error, age(this.wait))];
+      return [false, this.withNotes(T.unreachable(address, this.error, age(this.wait)))];
     }
     if (this.online === undefined) {
-      return [false, T.connecting];
+      return [false, this.withNotes(T.connecting)];
     }
     const notes = [];
     if (this.failedModules.length > 0) {
       notes.push(T.notes.failing(this.failedModules.join(', ')));
     }
-    const held = [...this.holds].filter(([, h]) => h.key === 'off').map(([i]) => i + 1);
-    if (held.length > 0) {
-      notes.push(T.notes.held(held.join(', ')));
-    }
-    if (!this.storeOk) {
-      notes.push(T.notes.storeUnavailable);
-    }
-    return [true, T.connected(address, notes)];
+    return [true, T.connected(address, [...notes, ...this.holdNotes()])];
   }
 
   async deviceCreated(device) {
@@ -737,6 +818,16 @@ export class LambdaApp {
     this.badge = undefined;
     if (typeof device?.external_id === 'string') {
       this.publisher.forget(device.external_id);
+      const id = parseId(device.external_id);
+      if (id?.kind === 'hc' && !id.role) {
+        this.releaseHold(id.index, 'device deleted');
+        if (this.floors.delete(`hc-${id.index}`)) {
+          this.saveData();
+        }
+      }
+      if (id?.kind === 'dhw' && !id.role && this.floors.delete(`dhw-${id.index}`)) {
+        this.saveData();
+      }
     }
   }
 
@@ -884,6 +975,9 @@ export class LambdaApp {
         Math.max(0, received + TIMINGS.ack - this.monotonic()),
       );
     });
+    // Not confirmed (at once or later): the dashboard shows what was clicked;
+    // the value read is published again.
+    promise.catch(() => this.republish(command));
     return Promise.race([promise.then(() => 'done'), ack])
       .then((result) => {
         if (result === 'pending') {
@@ -892,6 +986,37 @@ export class LambdaApp {
         }
       })
       .finally(() => this.timers.clearTimeout(timer));
+  }
+
+  /** The value the module shows, published again even if unchanged (after a command not confirmed). */
+  republish(command) {
+    const featureId = deviceIds(this.gladys, command.kind, command.index).feature(command.role);
+    this.gladys.forgetPublishedStates?.(featureId);
+    this.queueStates();
+    this.flush().catch(() => {});
+  }
+
+  /** A word read back after a write: kept as the module's current value. */
+  noteRead(command, raw) {
+    const values = this.values.get(moduleId(command.kind, command.index));
+    const value = decodeWord(specOf(command.kind, command.role), raw);
+    if (values && value !== undefined) {
+      values[command.role] = value;
+    }
+  }
+
+  /** The register word of the value in memory, when read and fresh. */
+  knownWord(command) {
+    const value = this.fresh()
+      ? this.values.get(moduleId(command.kind, command.index))?.[command.role]
+      : undefined;
+    if (value === undefined) {
+      return undefined;
+    }
+    if (command.role === 'mode') {
+      return value.code < 0 ? value.code + 0x10000 : value.code;
+    }
+    return tenthsWord(value);
   }
 
   epochOf(target) {
@@ -909,20 +1034,28 @@ export class LambdaApp {
     const { target, kind, index } = command;
     this.epochs.set(target, this.epochOf(target) + 1);
     this.guards.delete(`${target}:${command.role}`);
+    const before = this.knownWord(command);
+    const at = this.now();
     if (kind === 'hc' && command.role === 'mode') {
-      this.holds.set(index, { key: 'off', code: MODE_CODES.off, protective: true });
-      this.data.holds[index] = { mode: 'off', at: this.now() };
+      this.holds.set(index, { key: 'off', code: MODE_CODES.off, protective: true, since: at });
+      this.data.holds[index] = { mode: 'off', at };
     } else {
       this.floors.set(target, {
-        at: this.now(),
+        at,
         sends: 0,
         register: command.register,
         word: command.word,
         value: command.value,
+        // The value it replaces: written again only while a read still shows it (or nothing).
+        from: before === command.word ? undefined : before,
       });
     }
     // Kept in /data without delaying the bytes: a failed write of /data never stops a stop.
     const saved = this.saveData();
+    if (!this.client && this.data.target) {
+      // The configuration is not read yet: the controller kept in /data.
+      this.useClient(this.data.target);
+    }
     if (!this.client) {
       // No address known yet (configuration unread, nothing in /data): kept in memory.
       this.armRefresh(TIMINGS.holdRefresh);
@@ -934,7 +1067,12 @@ export class LambdaApp {
     const client = this.client;
     this.updateStatus().catch(() => {});
     try {
-      const outcome = await this.sendProtective(client, command, received);
+      const outcome = await this.sendProtective(client, command, received, before);
+      const floor = this.floors.get(target);
+      if (floor && outcome.got !== undefined && outcome.got !== command.word) {
+        // Read back unchanged: that is the value a later read must still show to write again.
+        floor.from = outcome.got;
+      }
       this.followUp();
       if (command.role === 'mode') {
         this.armRefresh(TIMINGS.holdRefresh);
@@ -957,7 +1095,7 @@ export class LambdaApp {
   }
 
   /** The write (tried again once within its budget), then the read back. */
-  async sendProtective(client, command, received) {
+  async sendProtective(client, command, received, before) {
     const options = {
       priority: PRIORITY.URGENT,
       startBy: received + TIMINGS.protectiveSendBy,
@@ -986,10 +1124,12 @@ export class LambdaApp {
     if (lastError) {
       return { confirmed: false, message: this.writeFailure(lastError) };
     }
-    return this.readBack(client, command, {
-      priority: PRIORITY.URGENT,
-      timeoutMs: TIMINGS.requestTimeout,
-    });
+    return this.readBack(
+      client,
+      command,
+      { priority: PRIORITY.URGENT, timeoutMs: TIMINGS.requestTimeout },
+      before === command.word ? undefined : before,
+    );
   }
 
   /** What a failed write means for the user. */
@@ -1017,13 +1157,14 @@ export class LambdaApp {
       return { confirmed: false, message: ERRORS.sentUnconfirmed(errorReason(err)) };
     }
     const got = words[0];
+    this.noteRead(command, got);
     if (got === command.word) {
-      return { confirmed: true };
+      return { confirmed: true, got };
     }
     if (before !== undefined && got === before) {
-      return { confirmed: false, message: ERRORS.notApplied };
+      return { confirmed: false, got, message: ERRORS.notApplied };
     }
-    return { confirmed: false, message: ERRORS.readBack(this.describe(command, got)) };
+    return { confirmed: false, got, message: ERRORS.readBack(this.describe(command, got)) };
   }
 
   describe(command, raw) {
@@ -1042,7 +1183,7 @@ export class LambdaApp {
       throw this.refusal(ERRORS.disabled);
     }
     if (this.epochOf(command.target) !== epoch) {
-      throw this.refusal(ERRORS.supersededByStop);
+      throw this.refusal(ERRORS.supersededByProtective);
     }
     if (generation !== this.generation || client !== this.client) {
       throw this.refusal(ERRORS.unknownDevice);
@@ -1066,8 +1207,7 @@ export class LambdaApp {
     const { client } = context;
     if (command.key === 'release') {
       // Nothing written: the request held is no longer repeated and lapses.
-      this.holds.delete(command.index);
-      delete this.data.holds[command.index];
+      this.releaseHold(command.index, 'released from Gladys', { save: false });
       await this.saveData();
       this.followUp();
       this.updateStatus().catch(() => {});
@@ -1094,17 +1234,28 @@ export class LambdaApp {
       throw this.refusal(ERRORS.missingValue);
     }
     const key = `${command.target}:${command.role}`;
-    if (command.role !== 'mode' && fresh === command.word && !this.guardActive(key)) {
+    if (
+      command.role !== 'mode' &&
+      fresh === command.word &&
+      !this.guardActive(key) &&
+      !this.floors.has(command.target)
+    ) {
       // Already so: nothing sent.
       return;
     }
-    const previousHold = this.holds.get(command.index);
+    const previousHold = command.role === 'mode' ? this.holds.get(command.index) : undefined;
+    const previousFloor = this.floors.get(command.target);
     let installed;
     const beforeSend = () => {
       this.checkSensitive(command, context);
       // From here the command leaves: it replaces what was pending for its target.
       if (command.role === 'mode') {
-        installed = { key: command.key, code: MODE_CODES[command.key], protective: false };
+        installed = {
+          key: command.key,
+          code: MODE_CODES[command.key],
+          protective: false,
+          since: this.now(),
+        };
         this.holds.set(command.index, installed);
         delete this.data.holds[command.index];
       } else {
@@ -1125,8 +1276,12 @@ export class LambdaApp {
       }
       const message = this.writeFailure(err);
       if (!err.sent || (err.kind === ERROR_KINDS.EXCEPTION && REFUSALS.has(err.code))) {
-        // Not applied: what was held before is held again.
+        // Not applied: what was held or pending before is again.
         this.restoreHold(command, installed, previousHold);
+        if (previousFloor && !this.floors.has(command.target)) {
+          this.floors.set(command.target, previousFloor);
+          this.saveData();
+        }
         if (err.sent) {
           this.followUp();
         }
@@ -1166,7 +1321,7 @@ export class LambdaApp {
     if (previousHold) {
       this.holds.set(command.index, previousHold);
       if (previousHold.key === 'off') {
-        this.data.holds[command.index] = { mode: 'off', at: this.now() };
+        this.data.holds[command.index] = { mode: 'off', at: previousHold.since ?? this.now() };
       }
     } else {
       this.holds.delete(command.index);
@@ -1208,47 +1363,83 @@ export class LambdaApp {
     }, delay);
   }
 
-  /** Each held request written again: a stop first and urgent; the others only while allowed. */
+  /**
+   * Each held request written again: a stop first and urgent; the others only
+   * while allowed. Read first: a mode another actor asked for since (the
+   * panel, another Modbus client) ends the hold, as does its age (24 h). A
+   * stop resumed from /data is written once without a read first.
+   */
   async refreshHolds() {
     const client = this.client;
     if (!client) {
       return;
     }
-    const writes = [];
+    const wall = this.now();
+    const jobs = [];
     for (const [index, hold] of this.holds) {
       if (!hold.protective && !this.config.allowCommands) {
-        // No longer allowed: the request lapses, the controller follows its own setting.
-        this.holds.delete(index);
-        this.logger.info(
-          `Heating circuit ${index + 1}: ${hold.key} no longer written (commands disabled)`,
-        );
+        this.releaseHold(index, 'commands disabled');
         continue;
       }
-      const register = registerOf('hc', index, specOf('hc', 'mode').at);
-      writes.push(
-        client
-          .writeRegisters(register, [hold.code < 0 ? hold.code + 0x10000 : hold.code], {
-            priority: hold.protective ? PRIORITY.URGENT : PRIORITY.COMMAND,
-            timeoutMs: TIMINGS.requestTimeout,
-            beforeSend: () => {
-              if (this.holds.get(index) !== hold || client !== this.client) {
-                throw new Error('replaced');
-              }
-              if (!hold.protective && !this.config.allowCommands) {
-                throw new Error('disabled');
-              }
-            },
-          })
-          .catch((err) => {
-            if (!err.beforeSend) {
-              this.logger.warn(
-                `Heating circuit ${index + 1}: ${hold.key} not written again (${errorReason(err)})`,
-              );
-            }
-          }),
-      );
+      const since = Number.isFinite(hold.since) && hold.since <= wall ? hold.since : wall;
+      if (wall - since >= TIMINGS.holdMax) {
+        this.releaseHold(index, 'held for 24 h');
+        continue;
+      }
+      jobs.push(this.refreshHold(client, index, hold));
     }
-    await Promise.all(writes);
+    await Promise.all(jobs);
+  }
+
+  async refreshHold(client, index, hold) {
+    const register = registerOf('hc', index, specOf('hc', 'mode').at);
+    const priority = hold.protective ? PRIORITY.URGENT : PRIORITY.COMMAND;
+    const word = hold.code < 0 ? hold.code + 0x10000 : hold.code;
+    if (!hold.resumed) {
+      try {
+        const [shown] = await client.readHolding(register, 1, {
+          priority,
+          timeoutMs: TIMINGS.requestTimeout,
+        });
+        const value = decodeWord(specOf('hc', 'mode'), shown);
+        if (
+          this.holds.get(index) === hold &&
+          value !== undefined &&
+          value.code !== hold.code &&
+          value.code !== -1
+        ) {
+          // Another actor asked for another mode: never written over.
+          this.releaseHold(index, 'mode changed elsewhere');
+          return;
+        }
+      } catch {
+        // Unread: the request is written all the same (a stop must go).
+      }
+    }
+    hold.resumed = false;
+    try {
+      await client.writeRegisters(register, [word], {
+        priority,
+        timeoutMs: TIMINGS.requestTimeout,
+        beforeSend: () => {
+          if (this.holds.get(index) !== hold || client !== this.client) {
+            throw new Error('replaced');
+          }
+          if (!hold.protective && !this.config.allowCommands) {
+            throw new Error('disabled');
+          }
+        },
+      });
+      hold.failing = false;
+    } catch (err) {
+      if (!err.beforeSend && !hold.failing) {
+        // Once per streak of failures.
+        hold.failing = true;
+        this.logger.warn(
+          `Heating circuit ${index + 1}: ${hold.key} not written again (${errorReason(err)})`,
+        );
+      }
+    }
   }
 
   // --- Floors not confirmed: written again by the next reads (3 times at most) ---------------
@@ -1267,9 +1458,17 @@ export class LambdaApp {
       const [kind, i] = target.split('-');
       const shown = this.online === true ? this.values.get(moduleId(kind, Number(i))) : undefined;
       const role = kind === 'dhw' ? 'setpoint' : 'room-setpoint';
-      if (shown?.[role] === floor.value) {
+      const value = shown?.[role];
+      if (value === floor.value) {
         this.floors.delete(target);
         changed = true;
+        continue;
+      }
+      if (value !== undefined && (floor.from === undefined || tenthsWord(value) !== floor.from)) {
+        // Changed since by someone else (the panel, a newer command): left alone.
+        this.floors.delete(target);
+        changed = true;
+        this.logger.info(`${target}: floor setpoint no longer written (changed since)`);
         continue;
       }
       if (

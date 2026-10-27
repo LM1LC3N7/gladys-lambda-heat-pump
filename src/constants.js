@@ -91,6 +91,8 @@ export const TIMINGS = {
    * 20 s while it is held.
    */
   holdRefresh: 20 * SECOND,
+  /** A mode held by Gladys (the stop included) is let go after 24 h: the controller takes over. */
+  holdMax: 24 * HOUR,
   /**
    * Commands. Gladys waits 5 s for the ack: setValue answers by 3.4 s with
    * the outcome, or, when the command is still queued behind others (a

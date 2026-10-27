@@ -240,9 +240,9 @@ export const ERRORS = {
       `Sent, but the heat pump reads back ${value}.`,
       `Envoyé, mais la pompe à chaleur relit ${value}.`,
     ),
-  supersededByStop: w(
-    'Nothing sent: this heating circuit was stopped after the command.',
-    'Rien envoyé : ce circuit de chauffage a été arrêté après la commande.',
+  supersededByProtective: w(
+    'Nothing sent: a stop or a minimum setpoint was asked for this module after the command.',
+    'Rien envoyé : un arrêt ou une consigne minimale a été demandé pour ce module après la commande.',
   ),
   stopRunning: w(
     'Refused: a stop of this heating circuit is being sent.',
@@ -256,6 +256,18 @@ export const ERRORS = {
     'The floor setpoint will be written again by the next reads.',
     'La consigne plancher sera réécrite par les prochaines lectures.',
   ),
+};
+
+/** Why a held mode ended (French; the English is the key). */
+const RELEASE_REASONS = {
+  'address cleared': { fr: 'adresse effacée' },
+  'another controller': { fr: 'autre régulateur' },
+  'circuit removed from the configuration': { fr: 'circuit retiré de la configuration' },
+  'device deleted': { fr: 'appareil supprimé' },
+  'released from Gladys': { fr: 'libéré depuis Gladys' },
+  'commands disabled': { fr: 'commandes désactivées' },
+  'held for 24 h': { fr: 'maintenu depuis 24 h' },
+  'mode changed elsewhere': { fr: 'mode changé ailleurs' },
 };
 
 /** The connection status of the configuration screen. */
@@ -286,6 +298,11 @@ export const T = {
       w(
         `Heating circuit held off by Gladys: ${list}.`,
         `Circuit de chauffage maintenu à l'arrêt par Gladys : ${list}.`,
+      ),
+    released: (n, reason) =>
+      w(
+        `Heating circuit ${n} no longer held by Gladys (${reason}).`,
+        `Circuit de chauffage ${n} plus maintenu par Gladys (${RELEASE_REASONS[reason]?.fr ?? reason}).`,
       ),
     storeUnavailable: w(
       '/data cannot be read or written: a stop is not kept across a restart.',

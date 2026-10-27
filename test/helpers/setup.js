@@ -44,7 +44,15 @@ export function memoryLogger() {
  */
 export async function setup(
   t,
-  { lambda: options = {}, config = {}, store, clock = testClock(), connect = true, devices } = {},
+  {
+    lambda: options = {},
+    config = {},
+    store,
+    clock = testClock(),
+    connect = true,
+    devices,
+    socket,
+  } = {},
 ) {
   const lambda = options === false ? undefined : await fakeLambda(options);
   t.after(() => lambda?.close());
@@ -61,6 +69,7 @@ export async function setup(
     now: clock.now,
     monotonic: clock.monotonic,
     timers: clock.timers,
+    ...(socket ? { connect: socket } : {}),
   });
   registerHandlers(gladys, app, logger);
   t.after(() => app.stop());

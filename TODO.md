@@ -20,8 +20,8 @@ Handoff document: what is done, what was decided, what comes next.
 
 ## To check on a real controller
 
-- The COP register (1x13, "Wirkungsgrad [0.01 %]" in the manual): read as
-  COP × 100 as the reference does (421 = 4.21).
+- The COP register (1x13, "Wirkungsgrad", unit "[---]" in the 2026 manual):
+  read as COP × 100 as the reference does (421 = 4.21).
 - How long a mode request (5x06) lasts when it is not written again: held
   requests are written every 20 s (forum reports: every 4 minutes is enough).
 - Whether 5x06 reads back the value written at once (the read back of the
@@ -31,6 +31,30 @@ Handoff document: what is done, what was decided, what comes next.
 - How many Modbus clients the controller accepts at once.
 
 ## Decisions
+
+- **Review r1 (2026-10-27)**:
+  - B1: the client is created from the controller kept in /data at boot,
+    whatever is held; a stop or a floor leaves while getConfig() keeps
+    failing (retried 5 s doubling to 60 s, status "could not be read" plus
+    the hold note). Test in `test/holds.test.js`.
+  - I1 (decided by the lot rules, as for CTC): restarting the heating from
+    Gladys ("No request" or another mode) stays sensitive. The hold lets go
+    by itself: the mode is read before each refresh write and another mode
+    than ours (not -1) ends it; 24 h after the click; circuit removed from
+    the configuration, device deleted, address cleared or changed. Said in
+    the status, the log and the docs.
+  - I2: a floor keeps the value it replaced (`from`, in /data) and is written
+    again only while a read shows it or nothing; never "already so" while a
+    floor lives; a newer setpoint refused or not sent gives the floor back.
+  - I3: any command not confirmed (before or after the ack) publishes the
+    value read again (`forgetPublishedStates` of the feature).
+  - I4 and minors: tests for the epoch, hot water without the option,
+    "No request" without the option, the option in beforeSend (command and
+    refresh), the guard, the transaction id, the ack time, the unreadable
+    fresh value, the retry of a stop; a dial under way is joined (never two
+    connections); the read back of a protective knows the value before; the
+    hold notes in every status; a failing refresh warns once per streak;
+    notices fence closed.
 
 - **Version 0.1.0 set by hand** in `package.json`, `package-lock.json`, the
   manifest and `docker_image` (`ghcr.io/lm1lc3n7/gladys-lambda-heat-pump:0.1.0`);

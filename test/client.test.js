@@ -207,3 +207,17 @@ test('invalid requests are refused before anything is sent', async () => {
   await assert.rejects(c.writeRegisters(0, []), RangeError);
   c.close();
 });
+
+test('an answer with another transaction id drops the connection', async (t) => {
+  const server = await tcpServer({
+    onData: (chunk) => {
+      const out = Buffer.from([0, 0, 0, 0, 0, 5, 1, 3, 2, 0, 42]);
+      out.writeUInt16BE((chunk.readUInt16BE(0) + 1) & 0xffff, 0);
+      return out;
+    },
+  });
+  t.after(() => server.close());
+  const { c } = await client(t, server);
+  await assert.rejects(c.readHolding(1, 1), { kind: ERROR_KINDS.PROTOCOL });
+  await waitFor(() => server.open === 0, 'the connection dropped');
+});
