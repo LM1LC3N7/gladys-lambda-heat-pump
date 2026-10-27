@@ -1,76 +1,71 @@
 # CLAUDE.md
 
-Project rules for coding assistants (Claude Code reads this file) and for human
-contributors.
+Project rules for coding assistants (Claude Code reads this file) and for
+human contributors. Read **[TODO.md](./TODO.md) first**: status, decisions
+already taken and the next milestones.
 
 ## What this is
 
-A Gladys Assistant **external integration**: a Node.js service (Node 22+, ESM,
-no build step) that runs in its own sandboxed Docker container and talks to
-Gladys through
-[`@gladysassistant/integration-sdk`](https://github.com/GladysAssistant/integration-sdk-js),
-its only runtime dependency. It started from the official JavaScript template.
+A Gladys Assistant **external integration** of type `device`: a Node.js
+service (Node 22+, ESM, no build step) in its own sandboxed Docker container,
+talking to Gladys through `@gladysassistant/integration-sdk` (0.16), its only
+runtime dependency (Modbus TCP goes through our own client on `node:net`).
+It reads a Lambda heat pump controller (EU-L) over local Modbus TCP and shows
+one device per module. Never tested with a real device, not affiliated with
+Lambda Wärmepumpen.
 
 ## Commands
 
 ```bash
 npm install
-npm test                                  # node --test, the built-in runner
-node --test test/devices.test.js          # one file
-node --test --test-name-pattern "plug"    # tests whose name matches
-npm run lint                              # ESLint
-npm run format:check                      # Prettier, as the CI runs it
-npm run format                            # Prettier, fix in place
-npx github:GladysAssistant/integration-store .   # store admission checks
+npm test                                  # node --test (gi test on the VM)
+node --test test/commands.test.js         # one file
+npm run lint
+npm run format:check
+npm run audit                             # npm audit --omit=dev
+npm run cover                             # cover.png (800x534), plain Node
 ```
-
-The CI (`.github/workflows/ci.yml`) runs `format:check`, `lint` and `test` on
-Node 22 and 24, and builds the Docker image: run the three commands before
-pushing.
 
 ## Architecture
 
 ```
-index.js                          SDK wiring only: handlers registered before connect()
-src/devices/index.js              registry of the device blueprints + dispatch helpers
-src/devices/<type>.js             one device type per file (buildDevice, onPoll, onSetValue...)
-src/scenes.js                     scene action handlers (manifest `scene_actions`)
-src/widgets.js                    dashboard widget handlers (manifest `widgets`)
-src/config.js                     DEFAULT_CONFIG (mirrors the manifest defaults) + normalization
-src/weather.js                    example driver (Open-Meteo)
-gladys-assistant-integration.json manifest: name, config_schema, actions, image...
-docs/en.md, docs/fr.md            user documentation, re-hosted by Gladys (mandatory)
-test/                             node --test, against the SDK's fake Gladys (integration-sdk/testing)
-.github/scripts/release.mjs       release helpers (manifest bump, changelog), tested in test/
+index.js                  SDK bootstrap; app.boot() writes a held stop from /data at once
+src/handlers.js           SDK handlers -> the app; getConfig() retried without end
+src/app.js                LambdaApp: polling, devices, states, status, commands, holds, floors
+src/lambda.js             register map (manual "Modbus-Protokoll 1.0"), blocks, decoding, modes
+src/modbus/client.js      Modbus TCP client (functions 3 and 16), priority queue, frozen cut
+src/devices.js            modules -> Gladys devices and states (pure)
+src/store.js              /data/lambda.json (target, last read, stops held, floors)
+src/publisher.js          states within 300/min (monotonic window)
+src/config.js             config_schema normalized
+src/constants.js          limits, timings, ceilings
+src/i18n.js               runtime texts (en/fr)
+test/kit/                 copied from ~/code/ref/gladys-testkit (do not edit)
+test/fixtures/fakeLambda.js  the fake controller on the loopback
+scripts/cover.mjs         cover.png generator
 ```
 
 ## Rules
 
-- **External ids are forever.** Build them with
-  `gladys.externalIds(type, platformId)`, `platformId` being the unique id the
-  platform gives the device (serial, cloud id, MAC), never a label. Gladys keys
-  devices, their history, scenes and dashboards on them: changing one creates a
-  new device and orphans the old one. The same goes for every key users store:
-  manifest `config_schema`, `actions`, widget and scene keys, feature keys.
-- **The container rootfs is read-only.** Write only under `/data`, the one
-  writable volume. Never log tokens, passwords or API keys.
-- **Versions belong to the Release workflow** (Actions → Release). Never edit
-  `version` in `package.json` or in the manifest, nor the `docker_image` tag,
-  by hand — except on the README's hand-pushed tag path, which bumps all three
-  together before tagging. `test/manifest.test.js` checks they agree.
-- **Changelog.** Every user-visible change adds a line under `## [Unreleased]`
-  in `CHANGELOG.md` (`### Added`, `Changed`, `Fixed`, `Removed`, `Security`).
-  Never write a version heading: the Release workflow moves the section, and it
-  becomes the notes of the GitHub Release.
-- **Manifest.** Texts are multi-language objects `{ "en": ..., "fr": ... }`:
-  `label`, `description` and `placeholder` alike, never a plain string. The
-  catalog `description` holds 10 to 100 characters per language. A field the
-  older cores do not know needs a higher `gladys_version` minimum
-  (`categories`: 4.86.0; `widgets`, `scene_triggers`, `scene_actions`,
-  `type: "provider"`: 5.1.0). `test/manifest.test.js` ties the manifest to the
-  code (defaults, action, scene and widget handlers): change both sides
-  together.
-- **User-facing text** is bilingual (English and French): action messages,
-  manifest texts, and `docs/en.md` / `docs/fr.md`, kept in sync.
-- **Style.** Prettier formats, ESLint catches mistakes. Comments explain why,
-  in English. Tests never touch the network.
+- **External ids are forever**: devices `lambda:system`, `lambda:hp-<n>`,
+  `lambda:dhw-<n>`, `lambda:buffer-<n>`, `lambda:hc-<n>` (n from 1), feature
+  roles of `src/lambda.js` REGISTERS. A republished device never loses a
+  feature.
+- **Modbus**: function 3 to read, 16 to write (the manual's rule); one request
+  on the wire at a time; priorities URGENT (stop, floor) > COMMAND > POLL; an
+  urgent request cuts a request quiet for 1 s and opens the new connection
+  only after the old one closed. Never the 32-bit statistics.
+- **Protective** (never refused by the option, a read, a command, the
+  configuration): mode `off` of a heating circuit (held, /data, every 20 s,
+  at boot) and setpoints at their floor (room 15 °C, hot water 25 °C).
+- **Sensitive** (`allow_commands`, off by default, checked on arrival and in
+  `beforeSend`): other modes, release, other setpoints. Fresh read first; one
+  per module; dropped when a stop of its circuit arrived after it (epoch).
+- **Hot water**: never above the configured ceiling (55 °C default) nor 60 °C,
+  whole degrees; the ceiling checked again right before the bytes leave.
+- **Success** only when the read back shows the value asked.
+- Never a switch or a writable binary. Units only from the core's
+  `DEVICE_FEATURE_UNITS_BY_CATEGORY`. No energy index.
+- Clocks: `monotonic` for every decision, `now` only for /data dates.
+- Files UTF-8 without BOM; code and comments in English; `docs/en.md` and
+  `docs/fr.md` in sync; every user-visible change under `## [Unreleased]`.
