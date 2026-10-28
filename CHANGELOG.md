@@ -10,6 +10,8 @@ the notes of the version's GitHub Release.
 
 ## [Unreleased]
 
+## [0.1.2] - 2026-10-28
+
 ### Changed
 
 - Hot water ceiling raised to 65 °C (default 65 °C), device limits still apply.
@@ -30,5 +32,6 @@ the notes of the version's GitHub Release.
 - Optional commands, off by default: heating circuit mode, room setpoint,
   hot water setpoint (55 °C ceiling by default, never above 60 °C).
 
-[Unreleased]: https://github.com/LM1LC3N7/gladys-lambda-heat-pump/compare/v0.1.1...HEAD
+[Unreleased]: https://github.com/LM1LC3N7/gladys-lambda-heat-pump/compare/v0.1.2...HEAD
+[0.1.2]: https://github.com/LM1LC3N7/gladys-lambda-heat-pump/compare/v0.1.1...v0.1.2
 [0.1.1]: https://github.com/LM1LC3N7/gladys-lambda-heat-pump/releases/tag/v0.1.1

@@ -1,6 +1,6 @@
 {
   "name": "gladys-lambda-heat-pump",
-  "version": "0.1.1",
+  "version": "0.1.2",
   "private": true,
   "description": "Gladys Assistant external integration for Lambda heat pumps (EU-L series) over local Modbus TCP: temperatures, COP, states, heating circuits, hot water, buffer, optional setpoints and modes with a capped hot water setpoint. Unofficial, not affiliated with Lambda Wärmepumpen.",
   "type": "module",
