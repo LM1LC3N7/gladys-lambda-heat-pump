@@ -235,20 +235,26 @@ test('release: allowed only with the option, nothing written, the stop no longer
   assert.equal(lambda.writes().length, count);
 });
 
-test('hot water: never above the configured ceiling nor 60 °C, whole degrees', async (t) => {
+test('hot water: never above the configured ceiling nor 65 °C, whole degrees', async (t) => {
   const { gladys, lambda, app } = await setup(t, { config: ALLOW });
   const dhw = await createDevice(gladys, 'dhw-1');
-  for (const bad of [56, 61, 65, 52.5, '', null, 'abc', '1e2', 24]) {
+  assert.equal(app.config.dhwCap, 65);
+  for (const bad of [66, 65.5, 70, 52.5, '', null, 'abc', '1e2', 24]) {
     assert.equal((await command(gladys, dhw, 'setpoint', bad)).success, false, String(bad));
   }
   assert.deepEqual(writesTo(lambda, 2050), []);
+  assert.deepEqual(await command(gladys, dhw, 'setpoint', 65), { success: true });
+  assert.equal(lambda.regs.get(2050), 650);
+  await app.configUpdated({ address: lambda.address, ...ALLOW, dhw_max_temperature: 55 });
+  assert.equal(app.config.dhwCap, 55);
+  assert.equal((await command(gladys, dhw, 'setpoint', 56)).success, false);
   assert.deepEqual(await command(gladys, dhw, 'setpoint', 52), { success: true });
   assert.equal(lambda.regs.get(2050), 520);
   await app.configUpdated({ address: lambda.address, ...ALLOW, dhw_max_temperature: 99 });
-  assert.equal(app.config.dhwCap, 60);
-  assert.deepEqual(await command(gladys, dhw, 'setpoint', 60), { success: true });
-  assert.equal((await command(gladys, dhw, 'setpoint', 61)).success, false);
-  assert.equal(Math.max(...writesTo(lambda, 2050)), 600);
+  assert.equal(app.config.dhwCap, 65);
+  assert.equal((await command(gladys, dhw, 'setpoint', 66)).success, false);
+  assert.equal((await command(gladys, dhw, 'setpoint', 65.5)).success, false);
+  assert.equal(Math.max(...writesTo(lambda, 2050)), 650);
 });
 
 test('hot water: a ceiling lowered while the command waits stops it before the bytes', async (t) => {

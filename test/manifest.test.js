@@ -69,7 +69,7 @@ test('the store basics; the four versions agree, never pinned in the test', () =
       'say it was never tested',
     );
     assert.match(docs, /trusted\s+network|réseau\s+de\s+confiance/i, 'say Modbus has no password');
-    assert.match(docs, /55\s*°C/, 'document the hot water ceiling');
+    assert.match(docs, /65\s*°C/, 'document the hot water ceiling');
   }
   assert.match(manifest.config_schema[0].description.en, /Never tested with a real device/);
   assert.match(manifest.config_schema[0].description.fr, /Jamais testé avec un vrai appareil/);
@@ -106,8 +106,8 @@ test('the configuration matches the code; the commands are off; the ceiling boun
   assert.equal(fields.allow_commands.default, false);
   const range = (f) => [f.min, f.max, f.default];
   assert.deepEqual(range(fields.dhw_max_temperature), [DHW_CAP.min, DHW_CAP.max, DHW_CAP.default]);
-  assert.equal(DHW_CAP.max, 60);
-  assert.equal(DHW_CAP.default, 55);
+  assert.equal(DHW_CAP.max, 65);
+  assert.equal(DHW_CAP.default, 65);
   assert.deepEqual(range(fields.poll_interval), [
     POLL_INTERVAL.min,
     POLL_INTERVAL.max,

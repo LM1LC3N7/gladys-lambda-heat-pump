@@ -168,7 +168,7 @@ Handoff document: what is done, what was decided, what comes next.
 - **Sensitive commands**: option checked on arrival and in `beforeSend`
   (the hold refresh too); fresh read of the register; one at a time per
   module (never per controller); refused while a stop of the circuit is
-  being sent. Hot water whole degrees 25 to min(ceiling, 60); room setpoint
+  being sent. Hot water whole degrees 25 to min(ceiling, 65); room setpoint
   tenths 15–40 (manual range).
 - **Ack and deadlines**: the outcome is answered by 3.4 s; a command still
   queued then is acked as accepted and its outcome logged (a scene on five

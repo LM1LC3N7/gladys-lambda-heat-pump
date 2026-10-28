@@ -24,7 +24,7 @@
 //     setpoints. Decided on a fresh read, refused when it is missing; one
 //     command at a time per module; refused while a stop of that circuit is
 //     being sent. A mode replaces the stop held only once it has left.
-//   - Hot water: never above the configured ceiling nor 60 °C (checked on
+//   - Hot water: never above the configured ceiling nor 65 °C (checked on
 //     arrival and right before the bytes leave), whole degrees only.
 //   - Success only when the value read back after the write is the one
 //     asked; the previous value read back is "sent, not applied yet"; a

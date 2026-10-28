@@ -67,7 +67,7 @@ scripts/cover.mjs         cover.png generator
 - **Sensitive** (`allow_commands`, off by default, checked on arrival and in
   `beforeSend`): other modes, release, other setpoints. Fresh read first; one
   per module; dropped when a stop of its circuit arrived after it (epoch).
-- **Hot water**: never above the configured ceiling (55 °C default) nor 60 °C,
+- **Hot water**: never above the configured ceiling (65 °C default) nor 65 °C,
   whole degrees; the ceiling checked again right before the bytes leave.
 - **Success** only when the read back shows the value asked.
 - Never a switch or a writable binary. Units only from the core's

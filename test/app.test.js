@@ -53,7 +53,7 @@ test('the configured modules become devices; values decoded with their scale', a
   const setpoint = discovered(gladys, 'dhw-1').features.find((f) =>
     f.external_id.endsWith(':setpoint'),
   );
-  assert.deepEqual([setpoint.category, setpoint.min, setpoint.max], ['water-heater', 25, 60]);
+  assert.deepEqual([setpoint.category, setpoint.min, setpoint.max], ['water-heater', 25, 65]);
   assert.equal(lambda.glued, 0);
 });
 

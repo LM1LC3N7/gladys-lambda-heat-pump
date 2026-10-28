@@ -28,7 +28,7 @@ Modbus TCP de son régulateur, sur votre réseau local, sans cloud.
 | Identifiant d'unité Modbus                                                     | 1 sauf si votre installateur l'a changé                                  |
 | Pompes à chaleur, ballons d'eau chaude, ballons tampons, circuits de chauffage | nombre de chaque module, comme sur l'écran (1 à 5, 0 à 5, 0 à 5, 0 à 12) |
 | Autoriser les commandes                                                        | désactivé par défaut (voir plus bas)                                     |
-| Plafond de l'eau chaude                                                        | 55 °C par défaut, de 40 à 60 °C, jamais plus de 60 °C                    |
+| Plafond de l'eau chaude                                                        | 65 °C par défaut, de 40 à 65 °C, jamais plus de 65 °C                    |
 | Intervalle de rafraîchissement                                                 | 30 s par défaut, de 10 s à 10 min                                        |
 
 Enregistrez, puis ajoutez les appareils depuis l'onglet Découverte.
@@ -140,7 +140,7 @@ une commande plus récente) est laissée telle quelle.
   régulateur mais jamais réglés.
 - **Consigne ambiante** (chauffage) : de 15 à 40 °C, au dixième de degré.
 - **Consigne d'eau chaude** : en degrés entiers, de 25 °C au plafond de la
-  configuration (55 °C par défaut, jamais au-dessus de 60 °C). Le plafond est
+  configuration (65 °C par défaut, jamais au-dessus de 65 °C). Le plafond est
   vérifié à l'arrivée de la commande et juste avant son envoi.
 
 Chaque commande lit d'abord la valeur actuelle (rien n'est envoyé si elle ne

@@ -23,11 +23,13 @@ test('addresses: IPv4 or host name, optional port; never broadcast, multicast, 0
   }
 });
 
-test('the hot water ceiling: 55 °C by default, 40 to 60, never above 60, rounded down', () => {
-  assert.equal(dhwCapOf(undefined), 55);
-  assert.equal(dhwCapOf(''), 55);
-  assert.equal(dhwCapOf(null), 55);
-  assert.equal(dhwCapOf(99), 60);
+test('the hot water ceiling: 65 °C by default, 40 to 65, never above 65, rounded down', () => {
+  assert.equal(dhwCapOf(undefined), 65);
+  assert.equal(dhwCapOf(''), 65);
+  assert.equal(dhwCapOf(null), 65);
+  assert.equal(dhwCapOf(99), 65);
+  assert.equal(dhwCapOf(65), 65);
+  assert.equal(dhwCapOf(65.5), 65);
   assert.equal(dhwCapOf('59.9'), 59);
   assert.equal(dhwCapOf(10), 40);
 });

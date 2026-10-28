@@ -17,8 +17,8 @@ controller: no cloud, no account.
   or "No request" is chosen in Gladys (commands allowed), or when the circuit
   or the address leaves the configuration.
 - Other modes, the room setpoint and the hot water setpoint only with the
-  "Allow the commands" option (off by default); hot water capped at 55 °C by
-  default, never above 60 °C.
+  "Allow the commands" option (off by default); hot water capped at 65 °C by
+  default, never above 65 °C.
 - Modbus has no password: keep the heat pump on a trusted network.
 
 User guide: [English](docs/en.md), [français](docs/fr.md).

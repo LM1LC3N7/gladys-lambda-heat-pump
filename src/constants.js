@@ -31,11 +31,11 @@ export const POLL_INTERVAL = { min: 10, max: 600, default: 30 };
 /**
  * The hot water setpoint (register 2x50) the commands may set, in °C
  * (scalding risk). The configuration chooses the ceiling between `min` and
- * `max`, 55 °C by default; nothing above 60 °C is ever written, whatever
+ * `max`, 65 °C by default; nothing above 65 °C is ever written, whatever
  * the configuration says or the controller would accept (the reference
- * allows 65 °C). `floor` is the lowest setpoint, which is never refused.
+ * also stops at 65 °C). `floor` is the lowest setpoint, which is never refused.
  */
-export const DHW_CAP = { min: 40, max: 60, default: 55 };
+export const DHW_CAP = { min: 40, max: 65, default: 65 };
 export const DHW_SETPOINT = { floor: 25 };
 
 /**

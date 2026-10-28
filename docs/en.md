@@ -27,7 +27,7 @@ interface of its controller, on your local network, without any cloud.
 | Modbus unit id                                              | 1 unless your installer changed it                                                   |
 | Heat pumps, hot water tanks, buffer tanks, heating circuits | how many of each module, as the display shows them (1 to 5, 0 to 5, 0 to 5, 0 to 12) |
 | Allow the commands                                          | off by default (see below)                                                           |
-| Hot water ceiling                                           | 55 °C by default, 40 to 60 °C, never more than 60 °C                                 |
+| Hot water ceiling                                           | 65 °C by default, 40 to 65 °C, never more than 65 °C                                 |
 | Refresh interval                                            | 30 s by default, 10 s to 10 min                                                      |
 
 Save, then add the devices from the Discovery tab. "Test the connection"
@@ -131,7 +131,7 @@ a setpoint changed since (at the panel or by a newer command) is left alone.
   program" are shown by the controller but never set.
 - **Room setpoint** (heating): 15 to 40 °C, tenths of a degree.
 - **Hot water setpoint**: whole degrees, 25 °C up to the ceiling of the
-  configuration (55 °C by default, never above 60 °C). The ceiling is checked
+  configuration (65 °C by default, never above 65 °C). The ceiling is checked
   when the command arrives and again right before it is sent.
 
 Each command reads the current value first (nothing is sent when it cannot be
